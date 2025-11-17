@@ -1,6 +1,7 @@
 # gribview
 
-`gribview` is a lightweight cross-platform visualiser for GRIB1/GRIB2 files. Point it at your favourite forecast, then scrub through time, levels and parameters while watching the field dance on screen – perfect for a quick “what is the model actually doing here?” check. Under the hood it combines ECMWF ecCodes for decoding, SDL2/OpenGL/GLEW for rendering and Dear ImGui for the UI, with a generous dose of AI agents helping with the plumbing.
+`gribview` is a lightweight cross-platform visualiser for GRIB files that can also filter grib messages. Perfect for a quick “what is in this data” check. 
+Under the hood it combines ECMWF ecCodes for decoding, SDL2/OpenGL/GLEW for rendering and Dear ImGui for the UI.
 
 ![gribview screenshot](pages/screenshot.jpg)
 
