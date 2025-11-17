@@ -30,9 +30,9 @@
     }
 
     img.icon {
-        width: 180px;
-        height: 180px;
-        margin-bottom: 25px;
+        width: 160px;
+        height: 160px;
+        margin-bottom: 18px;
         border-radius: 28px;
     }
 
@@ -46,6 +46,46 @@
         font-size: 17px;
         margin-top: 0;
         color: #666;
+    }
+
+    .screenshot {
+        margin-top: 26px;
+    }
+
+    .screenshot img {
+        max-width: 100%;
+        border-radius: 16px;
+        box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+    }
+
+    .screenshot-caption {
+        font-size: 14px;
+        color: #777;
+        margin-top: 8px;
+    }
+
+    .section-title {
+        margin-top: 32px;
+        font-size: 20px;
+        font-weight: 600;
+    }
+
+    ul {
+        text-align: left;
+        margin: 12px auto 0 auto;
+        padding-left: 20px;
+        max-width: 520px;
+        font-size: 15px;
+        color: #444;
+    }
+
+    ol {
+        text-align: left;
+        margin: 12px auto 0 auto;
+        padding-left: 20px;
+        max-width: 520px;
+        font-size: 15px;
+        color: #444;
     }
 
     .buttons {
@@ -105,7 +145,7 @@
         <img src="icon.png" alt="gribview icon" class="icon">
 
         <h1>gribview</h1>
-        <p class="subtitle">Lightweight cross-platform GRIB viewer</p>
+        <p class="subtitle">A tiny macOS app for peeking inside GRIB files – scrub through time, levels and parameters and see what your forecast is really doing.</p>
 
         <div class="buttons">
             <!-- DIRECT DMG DOWNLOAD -->
@@ -119,13 +159,43 @@
             </a>
         </div>
 
-        <a class="repo-link" href="https://github.com/forefireAPI/gribview/" target="_blank">
-            View the GitHub repository →
-        </a>
+        <div class="screenshot">
+            <img src="screenshot.jpg" alt="Screenshot of gribview showing a GRIB field">
+            <div class="screenshot-caption">
+                gribview on macOS, plotting GRIB data with an interactive colour map.
+            </div>
+        </div>
+
+        <div class="section-title">What gribview can do</div>
+        <ul>
+            <li>Open one or more GRIB1/GRIB2 files and browse all messages.</li>
+            <li>Scrub through forecast steps, levels and parameters in an interactive viewer.</li>
+            <li>Inspect GRIB metadata, tweak colour maps and export quick PNG snapshots.</li>
+            <li>Filter and export just the messages you care about to a new GRIB file.</li>
+        </ul>
+
+        <div class="section-title">How to run on macOS (unsigned app)</div>
+        <ol>
+            <li>Download the <code>Gribview.dmg</code> file using the button above.</li>
+            <li>Double‑click the DMG in Finder and drag <code>Gribview.app</code> into your <code>Applications</code> folder.</li>
+            <li>Try to launch gribview once from <code>Applications</code> (or Spotlight). macOS will warn that the app is from an unidentified developer and block it.</li>
+            <li>Open <code>System Settings → Privacy &amp; Security</code>. Scroll down until you see the message saying that “gribview was blocked from use”.</li>
+            <li>Click <strong>Open Anyway</strong>, then confirm by clicking <strong>Open</strong> in the dialog that appears.</li>
+            <li>From now on you can launch gribview normally, or just double‑click <code>.grib</code>/<code>.grib2</code> files to open them in the app.</li>
+        </ol>
+
+        <a class="repo-link" href="https://github.com/filippi/gribview/" target="_blank">View the GitHub repository →</a>
     </div>
 
     <footer>
-        Jean-Baptiste Filippi @ CNRS @ Universita di Corsica / Built with ECCodes – Open-source GRIB visualiser - firecaster.org   </footer>
+        Jean-Baptiste Filippi @
+        <a href="https://www.cnrs.fr/" target="_blank">CNRS</a> @
+        <a href="https://www.universita.corsica/" target="_blank">Universita di Corsica</a>
+        / Built with
+        <a href="https://github.com/ecmwf/eccodes" target="_blank">ecCodes</a>
+        – Open-source GRIB visualiser –
+        <a href="https://firecaster.org/" target="_blank">firecaster.org</a>
+    </footer>
 </div>
 
 </body>
