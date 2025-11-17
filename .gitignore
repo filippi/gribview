@@ -1,0 +1,6 @@
+build/
+dist/
+tools/AppIcon.iconset
+tools/Gribview.icns
+.DS_Store
+.vscode/settings.json

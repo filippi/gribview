@@ -1,0 +1,63 @@
+name: Build
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+
+jobs:
+  build:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash -l {0}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Micromamba
+        uses: mamba-org/setup-micromamba@v1
+        with:
+          environment-name: gribview
+          condarc: |
+            channels:
+              - conda-forge
+          create-args: >-
+            cmake
+            ninja
+            eccodes
+            glew
+            sdl2
+          init-shell: bash
+          cache-environment: true
+
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Prepare artifact folder
+        run: |
+          rm -rf artifacts/${{ runner.os }}
+          mkdir -p artifacts/${{ runner.os }}
+
+      - name: Install
+        run: cmake --install build --config Release --prefix "${{ github.workspace }}/artifacts/${{ runner.os }}"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gribview-${{ runner.os }}
+          path: artifacts/${{ runner.os }}
