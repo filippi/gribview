@@ -4,3 +4,9 @@ tools/AppIcon.iconset
 tools/Gribview.icns
 .DS_Store
 .vscode/settings.json
+external/imgui/.editorconfig
+external/imgui/misc/cpp/README.txt
+external/imgui/misc/debuggers/imgui.gdb
+external/imgui/misc/debuggers/imgui.natstepfilter
+external/imgui/misc/debuggers/imgui.natvis
+external/imgui/misc/debuggers/README.txt
