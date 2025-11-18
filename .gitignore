@@ -1,5 +1,7 @@
 build/
 dist/
+dist/*
+!dist/gribview-*.tar.gz
 tools/AppIcon.iconset
 tools/Gribview.icns
 .DS_Store

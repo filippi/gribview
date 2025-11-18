@@ -98,6 +98,35 @@ open dist/Gribview.dmg
 The script copies SDL2, GLEW, ecCodes, **including its `definitions/` and `samples/` directories**, into the bundle so no external runtime is required, and rewrites the loader paths. The resulting DMG can be published on GitHub Releases or shared directly; recipients just drag the `Gribview.app` onto their system.
 An ad-hoc `codesign --force --deep -` pass is applied automatically so macOS accepts the relocated dylibs; notarisation is still up to you if you plan to distribute broadly.
 
+## Packaging (Homebrew)
+`gribview` can also ship as a Homebrew formula. Use `tools/release_homebrew.sh <version>` to tag a release (you need to match `CMakeLists.txt` version), pack the sources into `dist/gribview-<version>.tar.gz`, and rewrite `homebrew/gribview.rb` so it references `https://github.com/filippi/gribview/releases/download/v<version>/gribview-<version>.tar.gz` with the generated SHA256. The script emits the archive path and digest, then you can:
+
+1. `git add dist/gribview-<version>.tar.gz homebrew/gribview.rb`
+2. `git commit -m "Release v<version>"`
+3. `git push --follow-tags`
+4. Create a GitHub release named `v<version>` and attach `dist/gribview-<version>.tar.gz`.
+
+The formula depends on `cmake`, `pkg-config`, `eccodes`, `glew`, and `sdl2`, and uses `cmake --install` to drop the binary under Homebrew prefixes.
+
+Homebrew requires the formula to live in a tap, so installing from `./homebrew/gribview.rb` directly shows `Error: Homebrew requires formulae to be in a tap`. Instead, either create a tap manually or run `tools/homebrew_tap_install.sh`:
+
+```bash
+# one-time tap setup (example tap name)
+brew tap-new filippi/gribview
+# copy the formula into the tap and install (the helper does this for you as well)
+mkdir -p "$(brew --repo filippi/gribview)/Formula"
+cp homebrew/gribview.rb "$(brew --repo filippi/gribview)/Formula/gribview.rb"
+brew install --build-from-source filippi/gribview/gribview
+```
+
+Or simply:
+
+```bash
+tools/homebrew_tap_install.sh
+```
+
+After the tap installs the release formula, you can run `brew reinstall --build-from-source filippi/gribview/gribview` to rebuild against newer dependencies.
+
 ## Continuous integration
 CI lives in `.github/workflows/build.yml` and builds the project for Linux, macOS and Windows on every push or pull request. Each job:
 1. Provisions dependencies with Micromamba on the respective runner.
