@@ -1,9 +1,11 @@
 cmake_minimum_required(VERSION 3.16)
 project(gribview VERSION 1.0 LANGUAGES C CXX)
 
+include(GNUInstallDirs)
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR})
 
 if(MSVC)
   add_compile_options(/permissive- /W4)
@@ -136,4 +138,29 @@ if(SDL2_MAIN_LIB)
   target_link_libraries(gribview PRIVATE ${SDL2_MAIN_LIB})
 endif()
 
-install(TARGETS gribview RUNTIME DESTINATION bin)
+install(TARGETS gribview RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+
+set(CPACK_PACKAGE_NAME "gribview")
+set(CPACK_PACKAGE_VENDOR "gribview")
+set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Lightweight cross-platform GRIB file visualiser and filter")
+set(CPACK_PACKAGE_CONTACT "https://github.com/filippi/gribview")
+set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_SOURCE_DIR}/LICENSE")
+set(CPACK_PACKAGE_DIRECTORY "${CMAKE_SOURCE_DIR}/dist")
+set(CPACK_STRIP_FILES TRUE)
+set(CPACK_SYSTEM_NAME "${CMAKE_SYSTEM_NAME}-${CMAKE_SYSTEM_PROCESSOR}")
+set(CPACK_GENERATOR "TGZ")
+
+if(WIN32)
+  list(APPEND CPACK_GENERATOR "ZIP")
+elseif(UNIX AND NOT APPLE)
+  list(APPEND CPACK_GENERATOR "DEB")
+  set(CPACK_DEBIAN_PACKAGE_SECTION "science")
+  set(CPACK_DEBIAN_PACKAGE_MAINTAINER "gribview maintainers")
+  set(CPACK_DEBIAN_PACKAGE_HOMEPAGE "https://github.com/filippi/gribview")
+  set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
+  set(CPACK_DEBIAN_PACKAGE_DESCRIPTION "Lightweight GRIB visualiser built on SDL2/OpenGL and ecCodes.")
+  set(CPACK_DEBIAN_PACKAGE_DEPENDS "libeccodes0 (>= 2.18), libsdl2-2.0-0, libglew2.2, libstdc++6, libc6")
+endif()
+
+include(CPack)

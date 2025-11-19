@@ -26,6 +26,21 @@ Under the hood it combines ECMWF ecCodes for decoding, SDL2/OpenGL/GLEW for rend
 
 All other third-party sources (Dear ImGui + backends, stb) live inside `external/` and `src/`.
 
+## Prebuilt packages
+
+Every tag named `v*` triggers the release workflow which attaches ready-to-run
+artifacts to the corresponding GitHub Release. Grab the latest version from
+<https://github.com/filippi/gribview/releases>:
+
+| Platform | Format | Install snippet |
+| --- | --- | --- |
+| Debian/Ubuntu | `.deb` + tarball | `sudo apt install ./gribview-<version>-Linux.deb` or unpack `gribview-<version>-Linux.tar.gz` and run `bin/gribview`. |
+| macOS | Homebrew formula + tarball | `brew tap filippi/gribview && brew install --build-from-source filippi/gribview/gribview`. Portable tarballs remain under the releases page. |
+| Windows | `.zip` | Unzip `gribview-<version>-windows.zip` and launch `gribview.exe`. |
+
+Maintainers who cut releases or need additional packaging details can follow
+`docs/packaging.md`.
+
 ## Building
 
 ```bash
