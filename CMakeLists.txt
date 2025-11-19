@@ -124,19 +124,26 @@ target_include_directories(gribview PRIVATE src)
 if(SDL2_INCLUDE_FALLBACK)
   target_include_directories(gribview PRIVATE ${SDL2_INCLUDE_FALLBACK})
 endif()
-target_link_libraries(gribview PRIVATE
+
+set(_gribview_libs
   imgui
   tinyfiledialogs
   GLEW::GLEW
   OpenGL::GL
-  ${ECCODES_IMPORTED_TARGET}
 )
-if(SDL2_CORE_LIBS)
-  target_link_libraries(gribview PRIVATE ${SDL2_CORE_LIBS})
+if(ECCODES_IMPORTED_TARGET)
+  list(APPEND _gribview_libs ${ECCODES_IMPORTED_TARGET})
 endif()
 if(SDL2_MAIN_LIB)
-  target_link_libraries(gribview PRIVATE ${SDL2_MAIN_LIB})
+  # SDL2main must appear on the link line before the SDL2 runtime library when
+  # linking with MinGW on Windows, otherwise the references from SDL2main to
+  # functions such as SDL_ShowSimpleMessageBox remain unresolved.
+  list(INSERT _gribview_libs 0 ${SDL2_MAIN_LIB})
 endif()
+if(SDL2_CORE_LIBS)
+  list(APPEND _gribview_libs ${SDL2_CORE_LIBS})
+endif()
+target_link_libraries(gribview PRIVATE ${_gribview_libs})
 
 install(TARGETS gribview RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
