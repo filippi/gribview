@@ -58,6 +58,8 @@ struct GribMessage
     long Nj;
     double lat1, lat2, lon1, lon2;
     double minVal, maxVal;
+    std::string parameterUnits;
+    std::string parameterName;
 
     // Instead of keeping the full handle we now also store:
     // the file path and the file offset at which this message starts.
@@ -120,6 +122,33 @@ static bool g_SaveSelectionSuccess = false;
 static int g_LastSelectionAnchor = -1;
 static int g_ScrollPendingIndex = -1;
 static bool g_RequestFileDialog = false;
+static std::string g_LastOpenedDir;
+static bool g_AddMarkerMode = false;
+static int g_DraggingMarkerIndex = -1;
+static std::string g_ExtractionStatus;
+static char g_MarkersCsvPath[512] = "markers.csv";
+static bool g_ExtractionRunning = false;
+static size_t g_ExtractionNextIndex = 0;
+static int g_PlotClickRequest = -1;
+static int g_PlotClickedIndex = -1;
+
+struct MarkerSample
+{
+    std::string messageKey;
+    double value;
+};
+
+struct Marker
+{
+    int id;
+    double lat;
+    double lon;
+    std::vector<MarkerSample> series;
+    char csvPath[512];
+    std::string status;
+};
+
+static std::vector<Marker> g_Markers;
 
 // For the GRIB table and keys select popup
 struct UiState
@@ -134,6 +163,15 @@ struct UiState
 
 static void LoadGribFileAppend(const std::string &path);
 static void ConfigureEcCodesEnvironment();
+static codes_handle *ReopenGribMessage(GribMessage &gm);
+static void GetMessageValuesAndRange(codes_handle *h,
+                                     std::vector<double> &outValues,
+                                     double &outMinVal,
+                                     double &outMaxVal);
+static void ClearAllSelections();
+static void RefreshSelectionState(bool requestScroll, int preferredIndex);
+static void UpdateWindowTitle();
+static void EnsureParameterInfo(GribMessage &gm);
 
 // ----------------------------------------------------------
 // Destroy texture helper
@@ -163,6 +201,439 @@ static GLuint CreateTextureFromData(const unsigned char *data, int width, int he
                  GL_UNSIGNED_BYTE, data);
     glBindTexture(GL_TEXTURE_2D, 0);
     return tex;
+}
+
+// ----------------------------------------------------------
+// Save-path helpers
+// ----------------------------------------------------------
+static void SetPathBuffer(char *dst, size_t dstSize, const std::string &value)
+{
+    if (dstSize == 0)
+        return;
+    snprintf(dst, dstSize, "%s", value.c_str());
+    dst[dstSize - 1] = '\0';
+}
+
+static std::string GetHomeDirectory()
+{
+#if defined(_WIN32)
+    const char *home = std::getenv("USERPROFILE");
+#else
+    const char *home = std::getenv("HOME");
+#endif
+    if (home && *home)
+        return std::string(home);
+    return std::filesystem::current_path().string();
+}
+
+static void UpdateSavePathsForDir(const std::filesystem::path &dir)
+{
+    namespace fs = std::filesystem;
+    fs::path base = dir.empty() ? fs::path(GetHomeDirectory()) : dir;
+    g_LastOpenedDir = base.string();
+    SetPathBuffer(g_SaveImagePath, IM_ARRAYSIZE(g_SaveImagePath), (base / "coloured.png").string());
+    SetPathBuffer(g_SaveGribPath, IM_ARRAYSIZE(g_SaveGribPath), (base / "selection.grib").string());
+    SetPathBuffer(g_SaveSinglePath, IM_ARRAYSIZE(g_SaveSinglePath), (base / "message.grib").string());
+    SetPathBuffer(g_MarkersCsvPath, IM_ARRAYSIZE(g_MarkersCsvPath), (base / "markers.csv").string());
+}
+
+static void EnsureParameterInfo(GribMessage &gm)
+{
+    if (!gm.parameterName.empty() && !gm.parameterUnits.empty())
+        return;
+    if (!gm.message)
+        gm.message = ReopenGribMessage(gm);
+    if (!gm.message)
+        return;
+    if (gm.parameterName.empty())
+    {
+        char buf[256];
+        size_t len = sizeof(buf);
+        if (codes_get_string(gm.message, "parameterName", buf, &len) == 0)
+            gm.parameterName = buf;
+    }
+    if (gm.parameterUnits.empty())
+    {
+        char buf[128];
+        size_t len = sizeof(buf);
+        if (codes_get_string(gm.message, "parameterUnits", buf, &len) == 0)
+            gm.parameterUnits = buf;
+    }
+}
+
+static void UpdateWindowTitle()
+{
+    if (!g_Window)
+        return;
+    std::string title = "gribview";
+    if (!g_GribMessages.empty())
+    {
+        std::string firstPath = g_GribMessages.front().filePath;
+        std::filesystem::path p(firstPath);
+        std::string name = p.filename().string();
+        bool multiple = false;
+        for (const auto &gm : g_GribMessages)
+        {
+            if (gm.filePath != firstPath)
+            {
+                multiple = true;
+                break;
+            }
+        }
+        title += " - " + name;
+        if (multiple)
+            title += " ...";
+    }
+    SDL_SetWindowTitle(g_Window, title.c_str());
+}
+
+static std::string BuildMessageKey(const GribMessage &gm)
+{
+    return gm.filePath + "|" + std::to_string(gm.fileOffset);
+}
+
+static GribMessage *FindMessageByKey(const std::string &key)
+{
+    for (auto &gm : g_GribMessages)
+    {
+        if (BuildMessageKey(gm) == key)
+            return &gm;
+    }
+    return nullptr;
+}
+
+static ImU32 MarkerColor(int idx)
+{
+    static ImU32 palette[] = {
+        IM_COL32(230, 76, 60, 255),   // red
+        IM_COL32(52, 152, 219, 255),  // blue
+        IM_COL32(46, 204, 113, 255),  // green
+        IM_COL32(241, 196, 15, 255),  // yellow
+        IM_COL32(155, 89, 182, 255),  // purple
+        IM_COL32(230, 126, 34, 255),  // orange
+        IM_COL32(22, 160, 133, 255),  // teal
+        IM_COL32(127, 140, 141, 255)  // gray
+    };
+    size_t paletteSize = sizeof(palette) / sizeof(ImU32);
+    if (paletteSize == 0)
+        return IM_COL32(255, 255, 255, 255);
+    return palette[idx % paletteSize];
+}
+
+static ImVec4 MarkerColorVec4(int idx)
+{
+    ImU32 c = MarkerColor(idx);
+    return ImGui::ColorConvertU32ToFloat4(c);
+}
+
+static bool LatLonToGrid(const GribMessage &gm, double lat, double lon, double &fi, double &fj, int &i, int &j)
+{
+    if (gm.Ni <= 1 || gm.Nj <= 1)
+        return false;
+    double latRange = fabs(gm.lat1 - gm.lat2);
+    if (latRange < 1e-9)
+        return false;
+    double lonRange = gm.lon2 - gm.lon1;
+    if (lonRange < 0)
+        lonRange += 360.0;
+    if (lonRange <= 0)
+        lonRange = 360.0;
+    bool desc = (gm.lat1 > gm.lat2);
+    fj = desc ? (gm.lat1 - lat) / latRange : (lat - gm.lat1) / latRange;
+    fj = std::clamp(fj, 0.0, 1.0);
+    double dlon = lon - gm.lon1;
+    while (dlon < 0.0)
+        dlon += 360.0;
+    while (dlon > lonRange && lonRange < 360.0)
+        dlon -= 360.0;
+    fi = lonRange > 1e-9 ? (dlon / lonRange) : 0.0;
+    fi = std::clamp(fi, 0.0, 1.0);
+    i = (int)std::round(fi * (double)(gm.Ni - 1));
+    j = (int)std::round(fj * (double)(gm.Nj - 1));
+    if (i < 0)
+        i = 0;
+    if (j < 0)
+        j = 0;
+    if (i >= gm.Ni)
+        i = (int)gm.Ni - 1;
+    if (j >= gm.Nj)
+        j = (int)gm.Nj - 1;
+    return true;
+}
+
+static bool LatLonToScreen(const GribMessage &gm, double lat, double lon, float contentX, float contentY, ImVec2 &outPos)
+{
+    double fi, fj;
+    int ii, jj;
+    if (!LatLonToGrid(gm, lat, lon, fi, fj, ii, jj))
+        return false;
+    float px = contentX + g_OffsetX + (float)fi * (float)(gm.Ni - 1) * g_Zoom;
+    float py = contentY + g_OffsetY + (float)fj * (float)(gm.Nj - 1) * g_Zoom;
+    outPos = ImVec2(px, py);
+    return true;
+}
+
+static bool SampleValueFromData(const GribMessage &gm, const std::vector<double> &data, double lat, double lon, double &outVal)
+{
+    double fi, fj;
+    int ii, jj;
+    if (!LatLonToGrid(gm, lat, lon, fi, fj, ii, jj))
+        return false;
+    size_t idx = (size_t)jj * (size_t)gm.Ni + (size_t)ii;
+    if (idx >= data.size())
+        return false;
+    outVal = data[idx];
+    return true;
+}
+
+static bool LoadMessageData(GribMessage &gm, std::vector<double> &outData)
+{
+    if (!gm.message)
+        gm.message = ReopenGribMessage(gm);
+    if (!gm.message)
+        return false;
+    double minVal, maxVal;
+    GetMessageValuesAndRange(gm.message, outData, minVal, maxVal);
+    return !outData.empty();
+}
+
+static void ClearMarkerSeries()
+{
+    for (auto &m : g_Markers)
+    {
+        m.series.clear();
+        m.status.clear();
+    }
+    g_PlotClickedIndex = -1;
+}
+
+static void StartMarkerExtraction()
+{
+    if (g_Markers.empty() || g_GribMessages.empty())
+        return;
+    ClearMarkerSeries();
+    g_PlotClickedIndex = -1;
+    g_ExtractionStatus = "Extracting...";
+    size_t startIdx = (g_SelectedMessageIndex >= 0 && g_SelectedMessageIndex < (int)g_GribMessages.size())
+                          ? (size_t)g_SelectedMessageIndex
+                          : 0;
+    g_ExtractionNextIndex = startIdx;
+    g_ExtractionRunning = true;
+}
+
+static void StepMarkerExtraction()
+{
+    if (!g_ExtractionRunning)
+        return;
+    if (g_Markers.empty() || g_GribMessages.empty())
+    {
+        g_ExtractionRunning = false;
+        g_ExtractionStatus = "No markers or messages";
+        return;
+    }
+    if (g_ExtractionNextIndex >= g_GribMessages.size())
+    {
+        g_ExtractionRunning = false;
+        g_ExtractionStatus = "Extraction done";
+        return;
+    }
+    size_t idx = g_ExtractionNextIndex++;
+    GribMessage &gm = g_GribMessages[idx];
+    std::vector<double> data;
+    bool hasData = LoadMessageData(gm, data);
+    for (auto &m : g_Markers)
+    {
+        MarkerSample samp;
+        samp.messageKey = BuildMessageKey(gm);
+        samp.value = std::numeric_limits<double>::quiet_NaN();
+        if (hasData)
+        {
+            double v = 0.0;
+            if (SampleValueFromData(gm, data, m.lat, m.lon, v))
+                samp.value = v;
+        }
+        m.series.push_back(samp);
+    }
+    std::vector<double>().swap(data);
+    ClearAllSelections();
+    gm.selected = true;
+    g_LastSelectionAnchor = (int)idx;
+    RefreshSelectionState(true, (int)idx);
+    g_ExtractionStatus = "Frame " + std::to_string(idx + 1) + "/" + std::to_string(g_GribMessages.size());
+}
+
+static bool SaveMarkersCsv()
+{
+    if (g_Markers.empty() || g_GribMessages.empty())
+        return false;
+    FILE *f = fopen(g_MarkersCsvPath, "w");
+    if (!f)
+        return false;
+    fprintf(f, "markerID");
+    for (const auto &col : g_UiState.displayedKeys)
+        fprintf(f, ",%s", col.c_str());
+    fprintf(f, ",lat,lon,value\n");
+    for (size_t mi = 0; mi < g_Markers.size(); mi++)
+    {
+        const Marker &m = g_Markers[mi];
+        for (size_t row = 0; row < m.series.size(); row++)
+        {
+            const MarkerSample &s = m.series[row];
+            GribMessage *gm = FindMessageByKey(s.messageKey);
+            fprintf(f, "%zu", mi + 1);
+            for (const auto &col : g_UiState.displayedKeys)
+            {
+                fprintf(f, ",");
+                if (gm)
+                {
+                    auto it = gm->keyValueMap.find(col);
+                    if (it != gm->keyValueMap.end())
+                        fprintf(f, "%s", it->second.c_str());
+                }
+            }
+            fprintf(f, ",%.6f,%.6f", m.lat, m.lon);
+            if (std::isnan(s.value))
+                fprintf(f, ",");
+            else
+                fprintf(f, ",%.10g", s.value);
+            fprintf(f, "\n");
+        }
+    }
+    fclose(f);
+    return true;
+}
+
+static void CreateMarkerAt(double lat, double lon)
+{
+    Marker m;
+    m.id = (int)g_Markers.size() + 1;
+    m.lat = lat;
+    m.lon = lon;
+    g_Markers.push_back(m);
+}
+
+static void RenumberMarkers()
+{
+    for (size_t i = 0; i < g_Markers.size(); ++i)
+        g_Markers[i].id = (int)i + 1;
+}
+
+static void RemoveMarkerAt(size_t idx)
+{
+    if (idx >= g_Markers.size())
+        return;
+    g_Markers.erase(g_Markers.begin() + idx);
+    RenumberMarkers();
+    ClearMarkerSeries();
+    g_ExtractionRunning = false;
+    g_ExtractionStatus = "Marker removed; cleared series";
+}
+
+static void DrawMarkersPlot(const ImVec2 &size)
+{
+    if (g_Markers.empty())
+    {
+        ImGui::Text("No marker data");
+        return;
+    }
+    g_PlotClickRequest = -1;
+    float width = size.x;
+    float height = size.y;
+    ImDrawList *dl = ImGui::GetWindowDrawList();
+    ImVec2 origin = ImGui::GetCursorScreenPos();
+    ImVec2 plotMin = origin;
+    ImVec2 plotMax(origin.x + width, origin.y + height);
+    dl->AddRectFilled(plotMin, plotMax, IM_COL32(30, 30, 30, 255));
+    dl->AddRect(plotMin, plotMax, IM_COL32(80, 80, 80, 255));
+    size_t maxCount = 0;
+    double vMin = std::numeric_limits<double>::infinity();
+    double vMax = -std::numeric_limits<double>::infinity();
+    for (const auto &m : g_Markers)
+    {
+        if (m.series.size() > maxCount)
+            maxCount = m.series.size();
+        for (const auto &s : m.series)
+        {
+            if (std::isnan(s.value))
+                continue;
+            vMin = std::min(vMin, s.value);
+            vMax = std::max(vMax, s.value);
+        }
+    }
+    if (maxCount < 2)
+        maxCount = 2;
+    if (!std::isfinite(vMin) || !std::isfinite(vMax) || fabs(vMax - vMin) < 1e-12)
+    {
+        vMin = -1.0;
+        vMax = 1.0;
+    }
+    double pad = (vMax - vMin) * 0.05;
+    vMin -= pad;
+    vMax += pad;
+    auto toScreen = [&](size_t idx, double value) -> ImVec2 {
+        float t = (float)idx / (float)(maxCount - 1);
+        float x = plotMin.x + t * (width - 1.0f);
+        float factor = (float)((value - vMin) / (vMax - vMin));
+        float y = plotMax.y - factor * (height - 1.0f);
+        return ImVec2(x, y);
+    };
+    // Axes and ticks
+    dl->AddLine(ImVec2(plotMin.x, plotMax.y), ImVec2(plotMax.x, plotMax.y), IM_COL32(200, 200, 200, 255));
+    dl->AddLine(ImVec2(plotMin.x, plotMin.y), ImVec2(plotMin.x, plotMax.y), IM_COL32(200, 200, 200, 255));
+    auto drawTick = [&](double value, bool major) {
+        float factor = (float)((value - vMin) / (vMax - vMin));
+        float y = plotMax.y - factor * (height - 1.0f);
+        ImU32 col = major ? IM_COL32(200, 200, 200, 255) : IM_COL32(120, 120, 120, 120);
+        dl->AddLine(ImVec2(plotMin.x, y), ImVec2(plotMax.x, y), col, major ? 1.5f : 1.0f);
+        dl->AddText(ImVec2(plotMin.x + 4, y - 10), IM_COL32(230, 230, 230, 255), (std::to_string((float)value)).c_str());
+    };
+    drawTick(vMax, true);
+    drawTick(vMin, true);
+    double mid = 0.5 * (vMin + vMax);
+    drawTick(mid, false);
+    if (vMin < 0.0 && vMax > 0.0)
+        drawTick(0.0, true);
+    // Data lines
+    for (size_t mi = 0; mi < g_Markers.size(); mi++)
+    {
+        const Marker &m = g_Markers[mi];
+        ImU32 col = MarkerColor((int)mi);
+        ImVec2 prev;
+        bool hasPrev = false;
+        for (size_t k = 0; k < m.series.size(); k++)
+        {
+            const MarkerSample &s = m.series[k];
+            if (std::isnan(s.value))
+            {
+                hasPrev = false;
+                continue;
+            }
+            ImVec2 p = toScreen(k, s.value);
+            if (hasPrev)
+                dl->AddLine(prev, p, col, 2.0f);
+            prev = p;
+            hasPrev = true;
+        }
+    }
+    if (g_PlotClickedIndex >= 0 && maxCount > 1)
+    {
+        float t = (float)g_PlotClickedIndex / (float)(maxCount - 1);
+        float x = plotMin.x + t * (width - 1.0f);
+        dl->AddLine(ImVec2(x, plotMin.y), ImVec2(x, plotMax.y), IM_COL32(120, 220, 120, 200), 2.0f);
+    }
+    ImGui::Dummy(ImVec2(width, height));
+    if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+    {
+        ImVec2 mp = ImGui::GetMousePos();
+        float relX = (mp.x - plotMin.x) / (width - 1.0f);
+        relX = std::clamp(relX, 0.0f, 1.0f);
+        size_t idx = (size_t)std::round(relX * (float)(maxCount - 1));
+        if (!g_GribMessages.empty())
+        {
+            g_PlotClickedIndex = (int)idx;
+            g_PlotClickRequest = (int)std::min(idx, g_GribMessages.size() - 1);
+        }
+    }
 }
 
 // ----------------------------------------------------------
@@ -442,6 +913,10 @@ static void ClearAllMessages()
     g_ScrollPendingIndex = -1;
     g_SaveSelectionStatus.clear();
     g_SaveSelectionSuccess = false;
+    ClearMarkerSeries();
+    g_ExtractionRunning = false;
+    g_ExtractionStatus = "";
+    UpdateWindowTitle();
 }
 
 static void LoadFilesAndSelect(const std::vector<std::string> &paths)
@@ -687,6 +1162,7 @@ static void LoadGribFileAppend(const std::string &path)
     codes_handle *h = nullptr;
     int err = 0;
     const int headers_only = 0;
+    bool loadedAny = false;
     while ((h = grib_new_from_file(nullptr, f,  headers_only, &err)) != nullptr)
     {
         GribMessage gm;
@@ -711,6 +1187,14 @@ static void LoadGribFileAppend(const std::string &path)
         size_t snLen = sizeof(snBuf);
         if (codes_get_string(h, "shortName", snBuf, &snLen) == 0)
             gm.shortName = snBuf;
+        char puBuf[128];
+        size_t puLen = sizeof(puBuf);
+        if (codes_get_string(h, "parameterUnits", puBuf, &puLen) == 0)
+            gm.parameterUnits = puBuf;
+        char pnBuf[256];
+        size_t pnLen = sizeof(pnBuf);
+        if (codes_get_string(h, "parameterName", pnBuf, &pnLen) == 0)
+            gm.parameterName = pnBuf;
         gm.minVal = 0.0;
         gm.maxVal = 0.0;
         gm.keyValueMap["index"] = std::to_string(gm.index);
@@ -729,6 +1213,7 @@ static void LoadGribFileAppend(const std::string &path)
             }
         }
         g_GribMessages.push_back(gm);
+        loadedAny = true;
     /*    std::cout << "Loaded GRIB #" << gm.index << ": shortName="
                   << gm.shortName << " level=" << gm.level
                   << " date/time=" << gm.dataDate << "/" << gm.dataTime
@@ -737,6 +1222,15 @@ static void LoadGribFileAppend(const std::string &path)
         h = nullptr;
     }
     fclose(f);
+    if (loadedAny)
+    {
+        namespace fs = std::filesystem;
+        fs::path parent = fs::path(path).parent_path();
+        if (parent.empty())
+            parent = fs::current_path();
+        UpdateSavePathsForDir(parent);
+        UpdateWindowTitle();
+    }
 }
 
 // ----------------------------------------------------------
@@ -776,6 +1270,7 @@ int main(int argc, char **argv)
     if (glewInit() != GLEW_OK)
         return 0;
     glGetError();
+    UpdateSavePathsForDir(GetHomeDirectory());
     // Load each file provided on the command line (appending messages)
     if (argc > 1)
     {
@@ -881,6 +1376,7 @@ int main(int argc, char **argv)
             ImGui::EndMainMenuBar();
         }
         PromptFileDialogIfNeeded();
+        StepMarkerExtraction();
         // Left panel
         float leftPanelHeight = (float)g_WindowHeight - menuBarHeight;
         ImGui::SetNextWindowPos(ImVec2(0, menuBarHeight), ImGuiCond_Always);
@@ -939,9 +1435,17 @@ int main(int argc, char **argv)
         }
         ImGui::Separator();
         ImGui::Text("PNG Output");
-        ImGui::PushItemWidth(-FLT_MIN);
+        ImGui::PushItemWidth(-110.0f);
         ImGui::InputText("##pngpath", g_SaveImagePath, IM_ARRAYSIZE(g_SaveImagePath));
         ImGui::PopItemWidth();
+        ImGui::SameLine();
+        if (ImGui::Button("Browse##pngpath"))
+        {
+            const char *patterns[] = {"*.png"};
+            const char *choice = tinyfd_saveFileDialog("Save PNG", g_SaveImagePath, 1, patterns, "PNG files");
+            if (choice)
+                SetPathBuffer(g_SaveImagePath, IM_ARRAYSIZE(g_SaveImagePath), choice);
+        }
         if (ImGui::Button("Save PNG"))
             SaveCurrentImagePNG(g_SaveImagePath);
         ImGui::Separator();
@@ -956,9 +1460,17 @@ int main(int argc, char **argv)
             ImGui::Text("%d message%s selected", selectedCount, selectedCount > 1 ? "s" : "");
         else
             ImGui::Text("No messages selected");
-        ImGui::PushItemWidth(-FLT_MIN);
+        ImGui::PushItemWidth(-110.0f);
         ImGui::InputText("##gribpath", g_SaveGribPath, IM_ARRAYSIZE(g_SaveGribPath));
         ImGui::PopItemWidth();
+        ImGui::SameLine();
+        if (ImGui::Button("Browse##gribpath"))
+        {
+            const char *patterns[] = {"*.grib", "*.grb", "*.grib2", "*.grb2"};
+            const char *choice = tinyfd_saveFileDialog("Save GRIB selection", g_SaveGribPath, 4, patterns, "GRIB files");
+            if (choice)
+                SetPathBuffer(g_SaveGribPath, IM_ARRAYSIZE(g_SaveGribPath), choice);
+        }
         ImGui::BeginDisabled(selectedCount == 0);
         if (ImGui::Button("Save selection"))
         {
@@ -983,6 +1495,92 @@ int main(int argc, char **argv)
             ImVec4 color = g_SaveSelectionSuccess ? ImVec4(0.4f, 0.8f, 0.4f, 1.0f)
                                                   : ImVec4(0.9f, 0.3f, 0.3f, 1.0f);
             ImGui::TextColored(color, "%s", g_SaveSelectionStatus.c_str());
+        }
+        ImGui::Separator();
+        ImGui::Text("Markers");
+        if (ImGui::Button("Add marker"))
+        {
+            g_AddMarkerMode = true;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Run extraction"))
+        {
+            StartMarkerExtraction();
+        }
+        ImGui::SameLine();
+        if (!g_ExtractionStatus.empty())
+            ImGui::Text("%s", g_ExtractionStatus.c_str());
+        ImGui::Spacing();
+        if (g_AddMarkerMode)
+            ImGui::TextColored(ImVec4(0.9f, 0.8f, 0.2f, 1.0f), "Click on the map to place the marker");
+        if (g_Markers.empty())
+            ImGui::Text("No markers yet");
+        else
+        {
+            GribMessage *selectedGM = nullptr;
+            std::vector<double> selectedData;
+            bool selectedHasData = false;
+            if (g_SelectedMessageIndex >= 0 && g_SelectedMessageIndex < (int)g_GribMessages.size())
+            {
+                selectedGM = &g_GribMessages[g_SelectedMessageIndex];
+                selectedHasData = LoadMessageData(*selectedGM, selectedData);
+            }
+            for (size_t i = 0; i < g_Markers.size(); i++)
+            {
+                auto &m = g_Markers[i];
+                ImGui::PushID((int)i);
+                ImVec4 c = MarkerColorVec4((int)i);
+                char valBuf[32];
+                bool valOk = false;
+                double val = 0.0;
+                if (selectedHasData && selectedGM)
+                {
+                    if (SampleValueFromData(*selectedGM, selectedData, m.lat, m.lon, val))
+                        valOk = true;
+                }
+                if (valOk)
+                    snprintf(valBuf, sizeof(valBuf), "%.2f", val);
+                else
+                    snprintf(valBuf, sizeof(valBuf), "N/A");
+                ImGui::TextColored(c, "Marker %d  lat=%.2f lon=%.2f val=%s", m.id, m.lat, m.lon, valBuf);
+                ImGui::SameLine();
+                if (ImGui::SmallButton("Remove"))
+                {
+                    RemoveMarkerAt(i);
+                    ImGui::PopID();
+                    break;
+                }
+                ImGui::PopID();
+            }
+            ImGui::Text("Series");
+            ImVec2 plotSize(ImGui::GetContentRegionAvail().x, 140.0f);
+            DrawMarkersPlot(plotSize);
+            if (g_PlotClickRequest >= 0 && g_PlotClickRequest < (int)g_GribMessages.size())
+            {
+                ClearAllSelections();
+                g_GribMessages[g_PlotClickRequest].selected = true;
+                g_LastSelectionAnchor = g_PlotClickRequest;
+                RefreshSelectionState(true, g_PlotClickRequest);
+                g_ExtractionRunning = false;
+                g_ExtractionStatus = "";
+            }
+            ImGui::PushItemWidth(-150.0f);
+            ImGui::InputText("##markerscsv", g_MarkersCsvPath, IM_ARRAYSIZE(g_MarkersCsvPath));
+            ImGui::PopItemWidth();
+            ImGui::SameLine();
+            if (ImGui::Button("Browse##markerscsv"))
+            {
+                const char *patterns[] = {"*.csv"};
+                const char *choice = tinyfd_saveFileDialog("Save markers CSV", g_MarkersCsvPath, 1, patterns, "CSV files");
+                if (choice)
+                    SetPathBuffer(g_MarkersCsvPath, IM_ARRAYSIZE(g_MarkersCsvPath), choice);
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Save CSV##allmarkers"))
+            {
+                bool ok = SaveMarkersCsv();
+                g_ExtractionStatus = ok ? "CSV saved" : "Failed to save CSV";
+            }
         }
         ImGui::Separator();
         if (ImGui::Button("Keys Select"))
@@ -1062,23 +1660,26 @@ int main(int argc, char **argv)
                 ImGui::TableHeadersRow();
                 if (ImGuiTableSortSpecs *sortSpecs = ImGui::TableGetSortSpecs())
                 {
-                    if (sortSpecs->SpecsDirty && sortSpecs->SpecsCount > 0)
+            if (sortSpecs->SpecsDirty && sortSpecs->SpecsCount > 0)
+            {
+                const ImGuiTableColumnSortSpecs *spec = &sortSpecs->Specs[0];
+                g_UiState.sortKey = g_UiState.displayedKeys[spec->ColumnIndex];
+                g_UiState.sortAscending = (spec->SortDirection == ImGuiSortDirection_Ascending);
+                std::stable_sort(g_GribMessages.begin(), g_GribMessages.end(),
+                                 [&](const GribMessage &ma, const GribMessage &mb)
+                                 {
+                                     return compareGribMessages(ma, mb,
+                                                                g_UiState.sortKey,
+                                                                g_UiState.sortAscending);
+                                 });
+                ClearMarkerSeries();
+                g_ExtractionRunning = false;
+                g_ExtractionStatus = "Markers cleared after reordering";
+                int activeIndex = -1;
+                for (size_t j = 0; j < g_GribMessages.size(); j++)
+                {
+                    if (g_GribMessages[j].selected)
                     {
-                        const ImGuiTableColumnSortSpecs *spec = &sortSpecs->Specs[0];
-                        g_UiState.sortKey = g_UiState.displayedKeys[spec->ColumnIndex];
-                        g_UiState.sortAscending = (spec->SortDirection == ImGuiSortDirection_Ascending);
-                        std::stable_sort(g_GribMessages.begin(), g_GribMessages.end(),
-                                         [&](const GribMessage &ma, const GribMessage &mb)
-                                         {
-                                             return compareGribMessages(ma, mb,
-                                                                        g_UiState.sortKey,
-                                                                        g_UiState.sortAscending);
-                                         });
-                        int activeIndex = -1;
-                        for (size_t j = 0; j < g_GribMessages.size(); j++)
-                        {
-                            if (g_GribMessages[j].selected)
-                            {
                                 activeIndex = j;
                                 break;
                             }
@@ -1166,12 +1767,18 @@ int main(int argc, char **argv)
                             g_SelectedMessageIndex = 0;
                             GenerateTextureForSelectedMessage();
                             g_LastSelectionAnchor = 0;
+                            ClearMarkerSeries();
+                            g_ExtractionRunning = false;
+                            g_ExtractionStatus = "Markers cleared after delete";
                         }
                         else
                         {
                             g_SelectedMessageIndex = -1;
                             g_LastSelectionAnchor = -1;
                             DestroyTexture(g_TextureID);
+                            ClearMarkerSeries();
+                            g_ExtractionRunning = false;
+                            g_ExtractionStatus = "Markers cleared after delete";
                         }
                     }
                 }
@@ -1310,6 +1917,71 @@ int main(int argc, char **argv)
             ImVec2 pMin(cp.x + g_OffsetX, cp.y + g_OffsetY);
             ImVec2 pMax(pMin.x + dw, pMin.y + dh);
             dl->AddImage((ImTextureID)(intptr_t)g_TextureID, pMin, pMax);
+            GribMessage *activeMsg = (g_SelectedMessageIndex >= 0 && g_SelectedMessageIndex < (int)g_GribMessages.size()) ? &g_GribMessages[g_SelectedMessageIndex] : nullptr;
+            bool overImage = (mp.x >= pMin.x && mp.x <= pMax.x && mp.y >= pMin.y && mp.y <= pMax.y);
+            if (ImGui::IsWindowHovered() && overImage)
+            {
+                if (g_AddMarkerMode && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+                {
+                    float latC = 0.0f, lonC = 0.0f;
+                    double vPick = GetLatLonFromMouse(mp.x, mp.y, cp.x, cp.y, latC, lonC);
+                    if (!std::isnan(vPick))
+                    {
+                        CreateMarkerAt((double)latC, (double)lonC);
+                        g_AddMarkerMode = false;
+                    }
+                }
+                if (!g_AddMarkerMode && g_DraggingMarkerIndex < 0 && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+                {
+                    for (int idx = (int)g_Markers.size() - 1; idx >= 0; --idx)
+                    {
+                        ImVec2 pos;
+                        if (activeMsg && LatLonToScreen(*activeMsg, g_Markers[idx].lat, g_Markers[idx].lon, cp.x, cp.y, pos))
+                        {
+                            float dx = mp.x - pos.x;
+                            float dy = mp.y - pos.y;
+                            if ((dx * dx + dy * dy) <= 12.0f * 12.0f)
+                            {
+                                g_DraggingMarkerIndex = idx;
+                                break;
+                            }
+                        }
+                    }
+                }
+                if (g_DraggingMarkerIndex >= 0)
+                {
+                    if (ImGui::IsMouseDown(ImGuiMouseButton_Left))
+                    {
+                        float latC = 0.0f, lonC = 0.0f;
+                        double vPick = GetLatLonFromMouse(mp.x, mp.y, cp.x, cp.y, latC, lonC);
+                        if (!std::isnan(vPick))
+                        {
+                            g_Markers[g_DraggingMarkerIndex].lat = (double)latC;
+                            g_Markers[g_DraggingMarkerIndex].lon = (double)lonC;
+                        }
+                    }
+                    else
+                    {
+                        g_DraggingMarkerIndex = -1;
+                    }
+                }
+            }
+            if (activeMsg)
+            {
+                for (size_t mi = 0; mi < g_Markers.size(); mi++)
+                {
+                    const Marker &m = g_Markers[mi];
+                    ImVec2 pos;
+                    if (!LatLonToScreen(*activeMsg, m.lat, m.lon, cp.x, cp.y, pos))
+                        continue;
+                    ImU32 col = MarkerColor((int)mi);
+                    ImU32 border = IM_COL32(30, 30, 30, 255);
+                    dl->AddCircleFilled(pos, 6.5f, col);
+                    dl->AddCircle(pos, 8.0f, border, 20, 2.0f);
+                    std::string label = "M" + std::to_string(m.id);
+                    dl->AddText(ImVec2(pos.x + 10, pos.y - 10), IM_COL32(240, 240, 240, 255), label.c_str());
+                }
+            }
             if (ImGui::IsWindowHovered())
             {
                 dl->AddLine(ImVec2(mp.x, pMin.y), ImVec2(mp.x, pMax.y),
@@ -1319,6 +1991,8 @@ int main(int argc, char **argv)
             }
         }
         ImGui::EndChild();
+        if (g_DraggingMarkerIndex >= 0 && !ImGui::IsMouseDown(ImGuiMouseButton_Left))
+            g_DraggingMarkerIndex = -1;
         // Status bar
         ImVec2 sbPos = ImGui::GetCursorScreenPos();
         float sbH = 30.f;
@@ -1331,6 +2005,16 @@ int main(int argc, char **argv)
         double valPick = std::numeric_limits<double>::quiet_NaN();
         if (g_TextureID)
             valPick = GetLatLonFromMouse(mp.x, mp.y, cp.x, cp.y, latVal, lonVal);
+        std::string valMeta;
+        if (g_SelectedMessageIndex >= 0 && g_SelectedMessageIndex < (int)g_GribMessages.size())
+        {
+            GribMessage &gmSel = g_GribMessages[g_SelectedMessageIndex];
+            EnsureParameterInfo(gmSel);
+            if (!gmSel.parameterName.empty())
+                valMeta += " " + gmSel.parameterName;
+            if (!gmSel.parameterUnits.empty())
+                valMeta += " [" + gmSel.parameterUnits + "]";
+        }
         char sbText[256];
         if (!std::isnan(valPick))
         {
@@ -1338,14 +2022,14 @@ int main(int argc, char **argv)
                 ((lonVal - 8.5) * (9.5 - lonVal) > 0))
             {
                 snprintf(sbText, sizeof(sbText),
-                         "Lat=%.3f Lon=%.3f Val=%.3f  Forza Corsica, center of the world !",
-                         latVal, lonVal, (float)valPick);
+                         "Lat=%.3f Lon=%.3f Val=%.3f%s  Forza Corsica, center of the world !",
+                         latVal, lonVal, (float)valPick, valMeta.c_str());
             }
             else
             {
                 snprintf(sbText, sizeof(sbText),
-                         "Lat=%.3f Lon=%.3f Val=%.3f - Scroll: Zoom, Right Drag: Pan",
-                         latVal, lonVal, (float)valPick);
+                         "Lat=%.3f Lon=%.3f Val=%.3f%s - Scroll: Zoom, Right Drag: Pan",
+                         latVal, lonVal, (float)valPick, valMeta.c_str());
             }
         }
         else
@@ -1367,7 +2051,17 @@ int main(int argc, char **argv)
                 ImGui::Text("Details for message #%d", inspMsg.index);
                 ImGui::Separator();
                 ImGui::Text("Save this message");
+                ImGui::PushItemWidth(-110.0f);
                 ImGui::InputText("##singlepath", g_SaveSinglePath, IM_ARRAYSIZE(g_SaveSinglePath));
+                ImGui::PopItemWidth();
+                ImGui::SameLine();
+                if (ImGui::Button("Browse##singlepath"))
+                {
+                    const char *patterns[] = {"*.grib", "*.grb", "*.grib2", "*.grb2"};
+                    const char *choice = tinyfd_saveFileDialog("Save GRIB message", g_SaveSinglePath, 4, patterns, "GRIB files");
+                    if (choice)
+                        SetPathBuffer(g_SaveSinglePath, IM_ARRAYSIZE(g_SaveSinglePath), choice);
+                }
                 if (ImGui::Button("Save message##insp"))
                     SaveSingleMessageGrib(inspMsg, g_SaveSinglePath);
                 ImGui::Separator();
