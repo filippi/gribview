@@ -131,6 +131,7 @@ static bool g_ExtractionRunning = false;
 static size_t g_ExtractionNextIndex = 0;
 static int g_PlotClickRequest = -1;
 static int g_PlotClickedIndex = -1;
+static bool g_ShowAbout = false;
 
 struct MarkerSample
 {
@@ -536,6 +537,15 @@ static void DrawMarkersPlot(const ImVec2 &size)
         ImGui::Text("No marker data");
         return;
     }
+    struct SeriesExtrema
+    {
+        double minVal = std::numeric_limits<double>::infinity();
+        double maxVal = -std::numeric_limits<double>::infinity();
+        size_t minIdx = 0;
+        size_t maxIdx = 0;
+        bool hasValue = false;
+    };
+    std::vector<SeriesExtrema> extrema(g_Markers.size());
     g_PlotClickRequest = -1;
     float width = size.x;
     float height = size.y;
@@ -548,16 +558,30 @@ static void DrawMarkersPlot(const ImVec2 &size)
     size_t maxCount = 0;
     double vMin = std::numeric_limits<double>::infinity();
     double vMax = -std::numeric_limits<double>::infinity();
-    for (const auto &m : g_Markers)
+    for (size_t mi = 0; mi < g_Markers.size(); ++mi)
     {
+        const auto &m = g_Markers[mi];
         if (m.series.size() > maxCount)
             maxCount = m.series.size();
-        for (const auto &s : m.series)
+        for (size_t k = 0; k < m.series.size(); ++k)
         {
+            const auto &s = m.series[k];
             if (std::isnan(s.value))
                 continue;
             vMin = std::min(vMin, s.value);
             vMax = std::max(vMax, s.value);
+            SeriesExtrema &ex = extrema[mi];
+            ex.hasValue = true;
+            if (s.value < ex.minVal)
+            {
+                ex.minVal = s.value;
+                ex.minIdx = k;
+            }
+            if (s.value > ex.maxVal)
+            {
+                ex.maxVal = s.value;
+                ex.maxIdx = k;
+            }
         }
     }
     if (maxCount < 2)
@@ -614,6 +638,31 @@ static void DrawMarkersPlot(const ImVec2 &size)
             prev = p;
             hasPrev = true;
         }
+    }
+    // Draw extrema annotations near the right edge using the series color.
+    float textLineHeight = ImGui::GetTextLineHeight();
+    for (size_t mi = 0; mi < g_Markers.size(); mi++)
+    {
+        const SeriesExtrema &ex = extrema[mi];
+        if (!ex.hasValue)
+            continue;
+        ImU32 col = MarkerColor((int)mi);
+        ImVec4 colVec = ImGui::ColorConvertU32ToFloat4(col);
+        char maxBuf[32];
+        char minBuf[32];
+        snprintf(maxBuf, sizeof(maxBuf), "max %.2f", ex.maxVal);
+        snprintf(minBuf, sizeof(minBuf), "min %.2f", ex.minVal);
+        ImVec2 maxPos = toScreen(ex.maxIdx, ex.maxVal);
+        ImVec2 minPos = toScreen(ex.minIdx, ex.minVal);
+        ImVec2 maxTextPos(plotMax.x - ImGui::CalcTextSize(maxBuf).x - 6.0f,
+                          std::clamp(maxPos.y - 10.0f, plotMin.y + 2.0f, plotMax.y - textLineHeight - 2.0f));
+        ImVec2 minTextPos(plotMax.x - ImGui::CalcTextSize(minBuf).x - 6.0f,
+                          std::clamp(minPos.y + 4.0f, plotMin.y + 2.0f, plotMax.y - textLineHeight - 2.0f));
+        // Avoid overlap between min/max labels for the same series.
+        if (fabs(maxTextPos.y - minTextPos.y) < textLineHeight + 2.0f)
+            minTextPos.y = std::min(plotMax.y - textLineHeight - 2.0f, maxTextPos.y + textLineHeight + 2.0f);
+        dl->AddText(maxTextPos, ImGui::ColorConvertFloat4ToU32(colVec), maxBuf);
+        dl->AddText(minTextPos, ImGui::ColorConvertFloat4ToU32(colVec), minBuf);
     }
     if (g_PlotClickedIndex >= 0 && maxCount > 1)
     {
@@ -1234,6 +1283,118 @@ static void LoadGribFileAppend(const std::string &path)
 }
 
 // ----------------------------------------------------------
+// UI style helpers
+// ----------------------------------------------------------
+static void ApplyBlenderInspiredStyle()
+{
+    ImGuiStyle &style = ImGui::GetStyle();
+    style.WindowRounding = 2.0f;
+    style.ChildRounding = 2.0f;
+    style.FrameRounding = 2.0f;
+    style.PopupRounding = 2.0f;
+    style.ScrollbarRounding = 2.0f;
+    style.GrabRounding = 2.0f;
+    style.TabRounding = 2.0f;
+    style.WindowBorderSize = 1.0f;
+    style.FrameBorderSize = 1.0f;
+    style.PopupBorderSize = 1.0f;
+    style.WindowPadding = ImVec2(7.0f, 5.0f);
+    style.FramePadding = ImVec2(6.0f, 3.0f);
+    style.ItemSpacing = ImVec2(6.0f, 3.0f);
+    style.ItemInnerSpacing = ImVec2(5.0f, 3.0f);
+    style.ScrollbarSize = 12.0f;
+    style.IndentSpacing = 11.0f;
+
+    ImVec4 accent = ImVec4(0.25f, 0.58f, 0.90f, 1.0f);
+    ImVec4 accentLow = ImVec4(0.25f, 0.58f, 0.90f, 0.65f);
+    ImVec4 bg = ImVec4(0.12f, 0.13f, 0.15f, 1.0f);
+    ImVec4 bgDark = ImVec4(0.09f, 0.10f, 0.12f, 1.0f);
+    ImVec4 panel = ImVec4(0.16f, 0.17f, 0.19f, 1.0f);
+    ImVec4 panelHover = ImVec4(0.20f, 0.22f, 0.25f, 1.0f);
+    ImVec4 text = ImVec4(0.93f, 0.94f, 0.96f, 1.0f);
+    ImVec4 textDim = ImVec4(0.70f, 0.72f, 0.75f, 1.0f);
+
+    ImVec4 *colors = style.Colors;
+    colors[ImGuiCol_Text] = text;
+    colors[ImGuiCol_TextDisabled] = textDim;
+    colors[ImGuiCol_WindowBg] = bg;
+    colors[ImGuiCol_ChildBg] = bgDark;
+    colors[ImGuiCol_PopupBg] = bg;
+    colors[ImGuiCol_Border] = ImVec4(0.20f, 0.22f, 0.24f, 1.0f);
+    colors[ImGuiCol_BorderShadow] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
+    colors[ImGuiCol_FrameBg] = panel;
+    colors[ImGuiCol_FrameBgHovered] = panelHover;
+    colors[ImGuiCol_FrameBgActive] = ImVec4(0.24f, 0.26f, 0.30f, 1.0f);
+    colors[ImGuiCol_TitleBg] = bgDark;
+    colors[ImGuiCol_TitleBgActive] = bg;
+    colors[ImGuiCol_TitleBgCollapsed] = bgDark;
+    colors[ImGuiCol_MenuBarBg] = bgDark;
+    colors[ImGuiCol_ScrollbarBg] = bgDark;
+    colors[ImGuiCol_ScrollbarGrab] = ImVec4(0.30f, 0.32f, 0.35f, 1.0f);
+    colors[ImGuiCol_ScrollbarGrabHovered] = ImVec4(0.36f, 0.38f, 0.42f, 1.0f);
+    colors[ImGuiCol_ScrollbarGrabActive] = ImVec4(0.42f, 0.45f, 0.50f, 1.0f);
+    colors[ImGuiCol_CheckMark] = accent;
+    colors[ImGuiCol_SliderGrab] = accentLow;
+    colors[ImGuiCol_SliderGrabActive] = accent;
+    colors[ImGuiCol_Button] = panel;
+    colors[ImGuiCol_ButtonHovered] = panelHover;
+    colors[ImGuiCol_ButtonActive] = accentLow;
+    colors[ImGuiCol_Header] = ImVec4(0.19f, 0.21f, 0.24f, 1.0f);
+    colors[ImGuiCol_HeaderHovered] = ImVec4(0.24f, 0.26f, 0.30f, 1.0f);
+    colors[ImGuiCol_HeaderActive] = ImVec4(0.28f, 0.31f, 0.36f, 1.0f);
+    colors[ImGuiCol_Separator] = ImVec4(0.22f, 0.23f, 0.26f, 1.0f);
+    colors[ImGuiCol_SeparatorHovered] = accentLow;
+    colors[ImGuiCol_SeparatorActive] = accent;
+    colors[ImGuiCol_ResizeGrip] = panel;
+    colors[ImGuiCol_ResizeGripHovered] = panelHover;
+    colors[ImGuiCol_ResizeGripActive] = accentLow;
+    colors[ImGuiCol_Tab] = ImVec4(0.18f, 0.20f, 0.23f, 1.0f);
+    colors[ImGuiCol_TabHovered] = accentLow;
+    colors[ImGuiCol_TabActive] = ImVec4(0.21f, 0.23f, 0.27f, 1.0f);
+    colors[ImGuiCol_TabUnfocused] = ImVec4(0.18f, 0.20f, 0.23f, 1.0f);
+    colors[ImGuiCol_TabUnfocusedActive] = ImVec4(0.21f, 0.23f, 0.27f, 1.0f);
+    colors[ImGuiCol_TableHeaderBg] = ImVec4(0.17f, 0.19f, 0.22f, 1.0f);
+    colors[ImGuiCol_TableBorderStrong] = ImVec4(0.20f, 0.22f, 0.24f, 1.0f);
+    colors[ImGuiCol_TableBorderLight] = ImVec4(0.16f, 0.17f, 0.19f, 1.0f);
+    colors[ImGuiCol_TableRowBg] = ImVec4(0.0f, 0.0f, 0.0f, 0.02f);
+    colors[ImGuiCol_TableRowBgAlt] = ImVec4(1.0f, 1.0f, 1.0f, 0.04f);
+    colors[ImGuiCol_TextSelectedBg] = ImVec4(0.26f, 0.55f, 0.90f, 0.28f);
+    colors[ImGuiCol_NavHighlight] = accentLow;
+    colors[ImGuiCol_NavWindowingHighlight] = ImVec4(1.0f, 1.0f, 1.0f, 0.3f);
+    colors[ImGuiCol_PlotLines] = ImVec4(0.41f, 0.76f, 0.98f, 1.0f);
+    colors[ImGuiCol_PlotLinesHovered] = ImVec4(0.56f, 0.89f, 1.0f, 1.0f);
+    colors[ImGuiCol_PlotHistogram] = ImVec4(0.26f, 0.72f, 0.45f, 1.0f);
+    colors[ImGuiCol_PlotHistogramHovered] = ImVec4(0.30f, 0.80f, 0.50f, 1.0f);
+}
+
+static void LoadPrimaryFont(ImGuiIO &io)
+{
+    ImFontConfig cfg;
+    cfg.OversampleH = 4;
+    cfg.OversampleV = 4;
+    cfg.PixelSnapH = false;
+    const char *fontCandidates[] = {
+        "external/imgui/misc/fonts/Roboto-Medium.ttf",
+        "../external/imgui/misc/fonts/Roboto-Medium.ttf",
+        "../../external/imgui/misc/fonts/Roboto-Medium.ttf"};
+    for (const char *candidate : fontCandidates)
+    {
+        if (std::filesystem::exists(candidate))
+        {
+            ImFont *font = io.Fonts->AddFontFromFileTTF(candidate, 15.0f, &cfg);
+            if (font)
+            {
+                io.FontDefault = font;
+                break;
+            }
+        }
+    }
+    if (!io.FontDefault)
+        io.FontDefault = io.Fonts->AddFontDefault();
+    io.Fonts->Build();
+}
+
+// ----------------------------------------------------------
 // Main
 // ----------------------------------------------------------
 int main(int argc, char **argv)
@@ -1302,17 +1463,18 @@ int main(int argc, char **argv)
     ImGui::CreateContext();
     ImGuiIO &io = ImGui::GetIO();
     io.IniFilename = nullptr; // Disable automatic saving/loading of imgui.ini
-    
-    (void)io;
     ImGui::StyleColorsDark();
+    ApplyBlenderInspiredStyle();
+    LoadPrimaryFont(io);
     const char *glsl_version = "#version 150";
     ImGui_ImplSDL2_InitForOpenGL(g_Window, g_GLContext);
     ImGui_ImplOpenGL3_Init(glsl_version);
     // Default table columns (index is always shown)
     g_UiState.displayedKeys.push_back("index");
-    g_UiState.displayedKeys.push_back("level");
     g_UiState.displayedKeys.push_back("shortName");
-    g_UiState.displayedKeys.push_back("dataDate");
+    g_UiState.displayedKeys.push_back("validityDate");
+    g_UiState.displayedKeys.push_back("validityTime");
+    g_UiState.displayedKeys.push_back("level");
     bool done = false;
     static std::vector<std::string> colormapNames;
     while (!done)
@@ -1373,6 +1535,12 @@ int main(int argc, char **argv)
                     done = true;
                 ImGui::EndMenu();
             }
+            if (ImGui::BeginMenu("About"))
+            {
+                if (ImGui::MenuItem("About gribview"))
+                    g_ShowAbout = true;
+                ImGui::EndMenu();
+            }
             ImGui::EndMainMenuBar();
         }
         PromptFileDialogIfNeeded();
@@ -1386,19 +1554,28 @@ int main(int argc, char **argv)
                          ImGuiWindowFlags_NoResize |
                          ImGuiWindowFlags_NoCollapse |
                          ImGuiWindowFlags_NoTitleBar);
-        // Color scale settings
-        ImGui::Text("Color Scale");
-        ImGui::InputFloat("Min", &g_UserMinVal);
-        ImGui::InputFloat("Max", &g_UserMaxVal);
+        // Color scale settings (compact)
+        if (ImGui::BeginTable("MinMaxTable", 2, ImGuiTableFlags_SizingStretchProp))
+        {
+            ImGui::TableNextColumn();
+            ImGui::InputFloat("Min", &g_UserMinVal);
+            ImGui::TableNextColumn();
+            ImGui::InputFloat("Max", &g_UserMaxVal);
+            ImGui::EndTable();
+        }
+        ImGuiStyle &style = ImGui::GetStyle();
+        float btnW = ImGui::CalcTextSize("Refit Data").x + style.FramePadding.x * 2.0f + 8.0f;
+        ImVec2 btnSize(btnW, 0.0f);
         ImGui::Checkbox("Auto-Fit", &g_AutoFit);
-        if (ImGui::Button("Apply##colsc"))
-            GenerateTextureForSelectedMessage();
         ImGui::SameLine();
-        if (ImGui::Button("Refit Data##colsc"))
+        if (ImGui::Button("Refit Data##colsc", btnSize))
         {
             g_AutoFit = true;
             GenerateTextureForSelectedMessage();
         }
+        ImGui::SameLine();
+        if (ImGui::Button("Apply##colsc", btnSize))
+            GenerateTextureForSelectedMessage();
         ImGui::Separator();
         // Colormap selection
         if (colormapNames.empty())
@@ -1416,8 +1593,10 @@ int main(int argc, char **argv)
                 break;
             }
         }
-        ImGui::Text("Colormap:");
-        if (ImGui::BeginCombo("##cmap", g_ChosenColormapName.c_str()))
+        ImGui::TextUnformatted("Colormap");
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
+        if (ImGui::BeginCombo("##Colormap", g_ChosenColormapName.c_str()))
         {
             for (int c = 0; c < (int)colormapNames.size(); c++)
             {
@@ -1434,45 +1613,43 @@ int main(int argc, char **argv)
             ImGui::EndCombo();
         }
         ImGui::Separator();
-        ImGui::Text("PNG Output");
-        ImGui::PushItemWidth(-110.0f);
-        ImGui::InputText("##pngpath", g_SaveImagePath, IM_ARRAYSIZE(g_SaveImagePath));
-        ImGui::PopItemWidth();
+        // PNG path + action
+        ImGui::TextUnformatted("PNG");
         ImGui::SameLine();
-        if (ImGui::Button("Browse##pngpath"))
+        float browseWidth = ImGui::CalcTextSize("Browse").x + style.FramePadding.x * 2.0f;
+        float savePngWidth = ImGui::CalcTextSize("Save PNG").x + style.FramePadding.x * 2.0f;
+        float pngInputWidth = ImGui::GetContentRegionAvail().x - savePngWidth - browseWidth - style.ItemSpacing.x * 2.0f;
+        pngInputWidth = std::max(pngInputWidth, 80.0f);
+        ImGui::SetNextItemWidth(pngInputWidth);
+        ImGui::InputText("##pngpath", g_SaveImagePath, IM_ARRAYSIZE(g_SaveImagePath));
+        ImGui::SameLine();
+        if (ImGui::Button("Save PNG", ImVec2(savePngWidth, 0.0f)))
+            SaveCurrentImagePNG(g_SaveImagePath);
+        ImGui::SameLine();
+        if (ImGui::Button("Browse##pngpath", ImVec2(browseWidth, 0.0f)))
         {
             const char *patterns[] = {"*.png"};
             const char *choice = tinyfd_saveFileDialog("Save PNG", g_SaveImagePath, 1, patterns, "PNG files");
             if (choice)
                 SetPathBuffer(g_SaveImagePath, IM_ARRAYSIZE(g_SaveImagePath), choice);
         }
-        if (ImGui::Button("Save PNG"))
-            SaveCurrentImagePNG(g_SaveImagePath);
         ImGui::Separator();
-        ImGui::Text("Selection Output");
         int selectedCount = 0;
         for (auto &msg : g_GribMessages)
         {
             if (msg.selected)
                 selectedCount++;
         }
-        if (selectedCount > 0)
-            ImGui::Text("%d message%s selected", selectedCount, selectedCount > 1 ? "s" : "");
-        else
-            ImGui::Text("No messages selected");
-        ImGui::PushItemWidth(-110.0f);
-        ImGui::InputText("##gribpath", g_SaveGribPath, IM_ARRAYSIZE(g_SaveGribPath));
-        ImGui::PopItemWidth();
+        ImGui::TextUnformatted("Message");
         ImGui::SameLine();
-        if (ImGui::Button("Browse##gribpath"))
-        {
-            const char *patterns[] = {"*.grib", "*.grb", "*.grib2", "*.grb2"};
-            const char *choice = tinyfd_saveFileDialog("Save GRIB selection", g_SaveGribPath, 4, patterns, "GRIB files");
-            if (choice)
-                SetPathBuffer(g_SaveGribPath, IM_ARRAYSIZE(g_SaveGribPath), choice);
-        }
+        float saveSelWidth = ImGui::CalcTextSize("Save selection").x + style.FramePadding.x * 2.0f;
+        float selInputWidth = ImGui::GetContentRegionAvail().x - saveSelWidth - browseWidth - style.ItemSpacing.x * 2.0f;
+        selInputWidth = std::max(selInputWidth, 80.0f);
+        ImGui::SetNextItemWidth(selInputWidth);
+        ImGui::InputText("##gribpath", g_SaveGribPath, IM_ARRAYSIZE(g_SaveGribPath));
+        ImGui::SameLine();
         ImGui::BeginDisabled(selectedCount == 0);
-        if (ImGui::Button("Save selection"))
+        if (ImGui::Button("Save selection", ImVec2(saveSelWidth, 0.0f)))
         {
             std::vector<GribMessage *> toWrite;
             toWrite.reserve(selectedCount);
@@ -1487,9 +1664,22 @@ int main(int argc, char **argv)
             if (ok)
                 g_SaveSelectionStatus = "Saved " + std::to_string(saved) + " message(s) to " + std::string(g_SaveGribPath);
             else
-                g_SaveSelectionStatus = "Failed to save selection. Check file permissions.";
+            g_SaveSelectionStatus = "Failed to save selection. Check file permissions.";
         }
         ImGui::EndDisabled();
+        ImGui::SameLine();
+        if (ImGui::Button("Browse##gribpath", ImVec2(browseWidth, 0.0f)))
+        {
+            const char *patterns[] = {"*.grib", "*.grb", "*.grib2", "*.grb2"};
+            const char *choice = tinyfd_saveFileDialog("Save GRIB selection", g_SaveGribPath, 4, patterns, "GRIB files");
+            if (choice)
+                SetPathBuffer(g_SaveGribPath, IM_ARRAYSIZE(g_SaveGribPath), choice);
+        }
+        ImGui::SameLine();
+        if (selectedCount > 0)
+            ImGui::Text("%d msg", selectedCount);
+        else
+            ImGui::Text("No selection");
         if (!g_SaveSelectionStatus.empty())
         {
             ImVec4 color = g_SaveSelectionSuccess ? ImVec4(0.4f, 0.8f, 0.4f, 1.0f)
@@ -1497,7 +1687,7 @@ int main(int argc, char **argv)
             ImGui::TextColored(color, "%s", g_SaveSelectionStatus.c_str());
         }
         ImGui::Separator();
-        ImGui::Text("Markers");
+        // Markers
         if (ImGui::Button("Add marker"))
         {
             g_AddMarkerMode = true;
@@ -1510,9 +1700,8 @@ int main(int argc, char **argv)
         ImGui::SameLine();
         if (!g_ExtractionStatus.empty())
             ImGui::Text("%s", g_ExtractionStatus.c_str());
-        ImGui::Spacing();
         if (g_AddMarkerMode)
-            ImGui::TextColored(ImVec4(0.9f, 0.8f, 0.2f, 1.0f), "Click on the map to place the marker");
+            ImGui::TextColored(ImVec4(0.9f, 0.8f, 0.2f, 1.0f), "Click map to place marker");
         if (g_Markers.empty())
             ImGui::Text("No markers yet");
         else
@@ -1542,7 +1731,7 @@ int main(int argc, char **argv)
                     snprintf(valBuf, sizeof(valBuf), "%.2f", val);
                 else
                     snprintf(valBuf, sizeof(valBuf), "N/A");
-                ImGui::TextColored(c, "Marker %d  lat=%.2f lon=%.2f val=%s", m.id, m.lat, m.lon, valBuf);
+                ImGui::TextColored(c, "M%d lat=%.2f lon=%.2f val=%s", m.id, m.lat, m.lon, valBuf);
                 ImGui::SameLine();
                 if (ImGui::SmallButton("Remove"))
                 {
@@ -1552,8 +1741,7 @@ int main(int argc, char **argv)
                 }
                 ImGui::PopID();
             }
-            ImGui::Text("Series");
-            ImVec2 plotSize(ImGui::GetContentRegionAvail().x, 140.0f);
+            ImVec2 plotSize(ImGui::GetContentRegionAvail().x, 120.0f);
             DrawMarkersPlot(plotSize);
             if (g_PlotClickRequest >= 0 && g_PlotClickRequest < (int)g_GribMessages.size())
             {
@@ -1565,7 +1753,7 @@ int main(int argc, char **argv)
                 g_ExtractionStatus = "";
             }
             ImGui::PushItemWidth(-150.0f);
-            ImGui::InputText("##markerscsv", g_MarkersCsvPath, IM_ARRAYSIZE(g_MarkersCsvPath));
+            ImGui::InputText("CSV##markerscsv", g_MarkersCsvPath, IM_ARRAYSIZE(g_MarkersCsvPath));
             ImGui::PopItemWidth();
             ImGui::SameLine();
             if (ImGui::Button("Browse##markerscsv"))
@@ -2000,7 +2188,10 @@ int main(int argc, char **argv)
         ImDrawList *sbDL = ImGui::GetWindowDrawList();
         ImVec2 sbMin = sbPos;
         ImVec2 sbMax(sbPos.x + avail.x, sbPos.y + sbH);
-        sbDL->AddRectFilled(sbMin, sbMax, IM_COL32(50, 50, 50, 255));
+        ImU32 sbBg = IM_COL32(36, 39, 45, 255);
+        ImU32 sbBorder = IM_COL32(60, 64, 70, 255);
+        sbDL->AddRectFilled(sbMin, sbMax, sbBg);
+        sbDL->AddRect(sbMin, sbMax, sbBorder);
         float latVal = 0.f, lonVal = 0.f;
         double valPick = std::numeric_limits<double>::quiet_NaN();
         if (g_TextureID)
@@ -2072,6 +2263,21 @@ int main(int argc, char **argv)
                     ImGui::Text("%s = %s", it->first.c_str(), it->second.c_str());
                 }
                 ImGui::EndChild();
+            }
+            ImGui::End();
+        }
+        if (g_ShowAbout)
+        {
+            ImGui::SetNextWindowSize(ImVec2(460, 0), ImGuiCond_FirstUseEver);
+            if (ImGui::Begin("About gribview", &g_ShowAbout, ImGuiWindowFlags_AlwaysAutoResize))
+            {
+                ImGui::Text("gribview");
+                ImGui::Separator();
+                ImGui::TextWrapped("gribview is a lightweight GRIB viewer built on top of ECMWF ecCodes and Dear ImGui.");
+                ImGui::TextWrapped("Developed by Jean-Baptiste Filippi (CNRS, University of Corsica).");
+                ImGui::TextWrapped("Load GRIB/GRIB2 files, explore metadata, adjust colormaps, place markers, extract series, and export PNG, CSV, or GRIB selections.");
+                if (ImGui::Button("Close##aboutwin"))
+                    g_ShowAbout = false;
             }
             ImGui::End();
         }
