@@ -28,7 +28,9 @@ jobs:
       - name: Create bottle
         run: |
           mkdir -p bottle
-          brew bottle --json local/gribview/gribview --output bottle
+          pushd bottle
+          brew bottle --json local/gribview/gribview
+          popd
           ls -lh bottle
 
       - name: Upload bottle artifacts
