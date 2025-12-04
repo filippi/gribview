@@ -15,18 +15,20 @@ jobs:
       - name: Update Homebrew
         run: brew update
 
-      - name: Tap gribview
-        run: brew tap filippi/gribview https://github.com/filippi/homebrew-gribview
+      - name: Set up temporary tap with formula
+        run: |
+          brew tap-new local/gribview --no-git
+          cp homebrew/gribview.rb "$(brew --repository local/gribview)/Formula/"
 
       - name: Build from source for bottling
         run: |
           brew uninstall --force gribview || true
-          brew install --build-bottle filippi/gribview/gribview
+          brew install --build-bottle local/gribview/gribview
 
       - name: Create bottle
         run: |
           mkdir -p bottle
-          brew bottle --json filippi/gribview/gribview --output bottle
+          brew bottle --json local/gribview/gribview --output bottle
           ls -lh bottle
 
       - name: Upload bottle artifacts
