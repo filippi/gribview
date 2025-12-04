@@ -2,7 +2,7 @@ class Gribview < Formula
   desc "Lightweight cross-platform GRIB file visualiser and filter"
   homepage "https://github.com/filippi/gribview"
   url "https://github.com/filippi/gribview/releases/download/v1.0/gribview-1.0.tar.gz"
-  sha256 "a048b6776223a7d026b6919264ca380561b2cb1a051ed3191c3861050c94c913"
+  sha256 "4cc8e8e9b2d407efe8957de9ab705e18839d459a1596a136476094bdce7ca6cb"
   license "Apache-2.0"
 
   depends_on "cmake" => :build
