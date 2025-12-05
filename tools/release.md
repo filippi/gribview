@@ -23,7 +23,7 @@ git add tools/release.md  # this file
 git commit -m "Release v<version>"
 git push
 ```
-
+ 
 ## 3) Tag and push
 ```bash
 git tag v<version>
