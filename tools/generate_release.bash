@@ -51,6 +51,7 @@ gh auth status >/dev/null
 log "Cleaning dist and previous artifacts"
 rm -rf dist release_artifacts artifacts
 mkdir -p dist
+rm -rf build  # ensure clean configure (generator can differ across runs)
 
 log "Configuring and building (Release)"
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
