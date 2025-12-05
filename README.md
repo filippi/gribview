@@ -1,45 +1,46 @@
 # gribview
 
-`gribview` is a lightweight cross-platform visualiser for GRIB files that can also filter grib messages. Perfect for a quick “what is in this data” check. 
-Under the hood it combines ECMWF ecCodes for decoding, SDL2/OpenGL/GLEW for rendering and Dear ImGui for the UI.
+`gribview` is a lightweight cross-platform GRIB viewer. Built on ECMWF ecCodes and OpenGL (SDL2/GLEW), it lets you:
+- Open GRIB files at full speed and browse messages instantly.
+- Reorganize/sort messages to see what’s inside at a glance.
+- Filter out unwanted messages to make GRIB archives more compact.
+- Select point values, track them over time, and export CSV time series.
+- Render fields, tweak colour maps, export PNGs, and dig into full metadata.
 
-![gribview screenshot](pages/screenshot.jpg)
+<video controls playsinline loop muted autoplay width="720" poster="docs/screenshot.jpg">
+  <source src="docs/screenview.mp4" type="video/mp4">
+</video>
 
-## Features
-- Open one or more GRIB files and browse every message in a sortable, filterable table.
-- Display field metadata (levels, parameters, dates, GRIB keys) and dig into the full key/value map through the inspector popup.
-- Interactive OpenGL viewer with pan, zoom, auto-fit, manual min/max scaling and switchable colour maps defined in `src/colormap512.h`. Can be re-generated with python script.
-- Multi-select rows to keep related messages together, regenerate textures on demand and save PNG captures with `stb_image_write`.
-- Export a filtered set of messages to a new GRIB file directly from the UI.
-- Drag-and-drop GRIB files onto the window or double-click them in Finder once the app is associated (the bundled macOS app declares `.grib/.grb/.grib2/.grb2` file types so they open directly in gribview).
-- File menu with `Open…`, `Clear`, and shortcuts (`Cmd/Ctrl + O`, `Cmd/Ctrl + Shift + W`, `Cmd/Ctrl + Q`) so you can launch empty, load additional GRIBs later, or clear the workspace without restarting.
+## Quick install (binaries)
+- **macOS (Homebrew):** `brew tap filippi/gribview && brew install gribview`
+- **macOS (DMG):** download `Gribview.dmg` from the latest release, drag `Gribview.app` to `Applications`, then allow under *System Settings → Privacy & Security → Open Anyway* (unsigned).
+- **Windows:** download `gribview-<version>-Windows-AMD64.zip`, unzip, run `gribview.exe`.
+- **Linux (Debian/Ubuntu):** download `gribview-<version>-Linux-x86_64.deb` and run `sudo apt install ./gribview-<version>-Linux-x86_64.deb` (pulls `libeccodes`, `libsdl2`, `libglew`). Other distros: use the tarball and install those libs from your package manager.
+- **Source:** `gribview-<version>.tar.gz` is attached to each release for packagers or manual builds.
 
-## Dependencies
-| Library | Why it is needed | How to get it |
-| --- | --- | --- |
-| [ecCodes](https://confluence.ecmwf.int/display/ECC/ecCodes+Home) | Decoding GRIB messages. | `conda install eccodes`, `brew install eccodes`, `apt install libeccodes-dev`, etc. |
-| [SDL2](https://www.libsdl.org/) | Windowing, input and GL context creation. | `conda install sdl2`, `brew install sdl2`, `apt install libsdl2-dev`, `choco install sdl2`. |
-| [GLEW](http://glew.sourceforge.net/) | Modern OpenGL loader used by ImGui. | `conda install glew`, `brew install glew`, `apt install libglew-dev`, `choco install glew`. |
-| [OpenGL 3.2+](https://www.opengl.org/) | Rendering backend. | Installed with the OS/toolchain. |
-| [CMake ≥ 3.16](https://cmake.org/) & a C++17 compiler | Build system. | Already bundled with Xcode/Visual Studio, or install via your package manager. |
-| [tinyfiledialogs](https://sourceforge.net/projects/tinyfiledialogs/) (bundled) | Native file chooser for `File → Open…`. | Included in `external/tinyfiledialogs`. |
+All artifacts live under <https://github.com/filippi/gribview/releases>. A sample GRIB (`docs/sample.grib`) is included for quick testing.
 
-All other third-party sources (Dear ImGui + backends, stb) live inside `external/` and `src/`.
+## What it does
+- Open one or more GRIB files and browse messages in a sortable, filterable table.
+- Inspect GRIB keys/metadata; view fields with interactive pan/zoom and switchable colour maps.
+- Extract CSV time series or point values for arbitrary locations.
+- Multi-select rows, export only those messages to a new GRIB, and save PNG snapshots.
+- Drag-and-drop GRIB files or use `File → Open…` with shortcuts (`Cmd/Ctrl + O`, etc.).
 
-## Prebuilt packages
+## Usage
+Launch gribview and drop GRIB/GRIB2 files onto the window, or start with:
+```bash
+gribview file1.grib file2.grib2
+```
+Pick messages from the table, tweak colour maps and scaling on the left, explore the canvas, export CSV time series/points, or “Save selection” to write only selected messages back to disk.
 
-Every tag named `v*` triggers the release workflow which attaches ready-to-run
-artifacts to the corresponding GitHub Release. Grab the latest version from
-<https://github.com/filippi/gribview/releases>:
-
-| Platform | Format | Install snippet |
-| --- | --- | --- |
-| Debian/Ubuntu | `.deb` + tarball | `sudo apt install ./gribview-<version>-Linux.deb` or unpack `gribview-<version>-Linux.tar.gz` and run `bin/gribview`. |
-| macOS | Homebrew formula + tarball | `brew tap filippi/gribview && brew install --build-from-source filippi/gribview/gribview`. Portable tarballs remain under the releases page. |
-| Windows | `.zip` | Unzip `gribview-<version>-windows.zip` and launch `gribview.exe`. |
-
-Maintainers who cut releases or need additional packaging details can follow
-`docs/packaging.md`.
+## Build from source
+Install dependencies (`cmake`, `eccodes`, `sdl2`, `glew`, a C++17 compiler) via your package manager, then:
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release
+```
+The binary ends up in `build/bin/gribview` (or `build/bin/Release/gribview.exe` on Windows). See `docs/packaging.md` if you need to regenerate installers.
 
 ## Building
 

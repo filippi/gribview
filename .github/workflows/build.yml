@@ -30,6 +30,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
+            libeccodes0 \
+            libsdl2-2.0-0 \
+            libglew2.2 \
             libgl1-mesa-dev \
             libglu1-mesa-dev
 
@@ -92,6 +95,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
+            libeccodes0 \
+            libsdl2-2.0-0 \
+            libglew2.2 \
             libgl1-mesa-dev \
             libglu1-mesa-dev
 

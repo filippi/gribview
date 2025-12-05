@@ -89,33 +89,65 @@
     }
 
     .buttons {
-        margin-top: 35px;
+        margin-top: 32px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        align-items: center;
+    }
+
+    .terminal {
+        margin: 22px auto 6px auto;
+        max-width: 520px;
+        background: #111;
+        color: #e5e5e5;
+        padding: 14px 16px;
+        border-radius: 10px;
+        font-family: SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
+        font-size: 14px;
+        text-align: left;
+        box-shadow: 0 10px 25px rgba(0,0,0,0.25);
+        border: 1px solid #222;
+    }
+
+    .button-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        justify-content: center;
+        width: 100%;
     }
 
     a.btn {
         display: inline-block;
-        background: #007aff;
+        background: #0b7cff;
         color: white;
-        padding: 14px 32px;
-        border-radius: 12px;
-        font-size: 17px;
+        padding: 12px 20px;
+        border-radius: 14px;
+        font-size: 18px;
         text-decoration: none;
-        font-weight: 500;
-        box-shadow: 0 4px 12px rgba(0,122,255,0.3);
-        margin-bottom: 12px;
+        font-weight: 600;
+        box-shadow: 0 8px 18px rgba(0,122,255,0.25);
+        min-width: 220px;
+        text-align: center;
     }
 
     a.btn:hover {
-        background: #006ae6;
+        background: #0a6cd8;
     }
 
     a.dmg {
-        background: #34c759; /* Apple green */
-        box-shadow: 0 4px 12px rgba(52,199,89,0.35);
+        background: #2fbe5e;
+        box-shadow: 0 8px 18px rgba(47,190,94,0.3);
     }
 
     a.dmg:hover {
-        background: #2cab4c;
+        background: #27a651;
+    }
+
+    a.sample {
+        background: #4a4f57;
+        box-shadow: 0 8px 18px rgba(0,0,0,0.2);
     }
 
     .repo-link {
@@ -145,34 +177,68 @@
         <img src="icon.png" alt="gribview icon" class="icon">
 
         <h1>gribview</h1>
-        <p class="subtitle">A tiny macOS app for peeking inside GRIB files.</p>
-        <p class="subtitle">WARNING, it is unsigned, you'll have to authorize it, instruction below)</p>
+        <p class="subtitle">Blazing-fast GRIB browsing (OpenGL + ecCodes), reorganize/merge/append/filter messages, export CSV time series/point values, PNG, and save compact GRIB archives.</p>
+        <p class="subtitle">Pick your platform below—no compiler needed.</p>
 
         <div class="buttons">
-            <!-- DIRECT DMG DOWNLOAD -->
-            <a class="btn dmg" href="https://forefire.univ-corse.fr/gribview/Gribview.dmg">
-                Download macOS DMG 
-            </a>
+            <div class="terminal">
+                $ brew tap filippi/gribview && brew install gribview
+            </div>
+            <div class="button-row">
+                <!-- macOS -->
+                <a class="btn dmg" href="https://github.com/filippi/gribview/releases/download/v1.1/Gribview.dmg">
+                    Download macOS DMG
+                </a>
 
-            <!-- GENERIC RELEASES PAGE -->
-            <a class="btn" href="sample.grib">
-                Sample grib data
-            </a>
+                <!-- Linux -->
+                <a class="btn" href="https://github.com/filippi/gribview/releases/download/v1.1/gribview-1.1-Linux-x86_64.deb">
+                    Download Linux (.deb)
+                </a>
+
+                <!-- Windows -->
+                <a class="btn" href="https://github.com/filippi/gribview/releases/download/v1.1/gribview-1.1-Windows-AMD64.zip">
+                    Download Windows (.zip)
+                </a>
+            </div>
+
+            <div class="button-row">
+                <!-- Sample data -->
+                <a class="btn sample" href="sample.grib">
+                    Sample grib data
+                </a>
+            </div>
         </div>
 
         <div class="screenshot">
-            <img src="screenshot.jpg" alt="Screenshot of gribview showing a GRIB field">
+            <video controls playsinline loop muted autoplay poster="screenshot.jpg" style="max-width:100%; border-radius:16px; box-shadow:0 10px 25px rgba(0,0,0,0.15);">
+                <source src="screenview.mp4" type="video/mp4">
+                <img src="screenshot.jpg" alt="Screenshot of gribview showing a GRIB field">
+            </video>
             <div class="screenshot-caption">
-                gribview on macOS, filter, view and plot GRIB data with an interactive colour map.
+                Filter, browse, plot, and extract GRIB data; export CSV time series and point values.
             </div>
         </div>
 
         <div class="section-title">What gribview can do</div>
         <ul>
-            <li>Open one or more GRIB files and browse all messages.</li>
-            <li>Scrub through levels and parameters in an interactive viewer.</li>
-            <li>Inspect GRIB metadata, tweak colour maps and export quick PNG snapshots.</li>
-            <li>Filter and export just the messages you to a new GRIB file.</li>
+            <li>Open GRIB files at full speed with OpenGL rendering and ecCodes decoding.</li>
+            <li>Reorganize, sort, append, merge, and resave GRIB archives.</li>
+            <li>Filter out unwanted messages to make GRIB archives more compact.</li>
+            <li>Select point values, track them over time, and export CSV time series.</li>
+            <li>Scrub levels/parameters, tweak colour maps, export PNGs, and inspect full metadata.</li>
+        </ul>
+
+        <div class="section-title">Quick install (macOS via Homebrew)</div>
+        <ul>
+            <li><strong>brew:</strong> <code>brew tap filippi/gribview</code> then <code>brew install gribview</code>.</li>
+        </ul>
+
+        <div class="section-title">Install options</div>
+        <ul>
+            <li><strong>macOS (brew):</strong> <code>brew tap filippi/gribview</code> then <code>brew install gribview</code>.</li>
+            <li><strong>macOS (DMG):</strong> download the DMG above, drag <code>Gribview.app</code> to <code>Applications</code>. It is unsigned; you may need to allow it under <em>System Settings → Privacy &amp; Security → Open Anyway</em>.</li>
+            <li><strong>Windows:</strong> unzip the package above and run <code>gribview.exe</code>.</li>
+            <li><strong>Linux (Debian/Ubuntu):</strong> download the <code>.deb</code> above and run <code>sudo apt install ./gribview-1.1-Linux-x86_64.deb</code>. This pulls <code>libeccodes</code>, <code>libsdl2</code>, <code>libglew</code> automatically. Other distros can use the tarball from the release and install those libs via their package manager.</li>
         </ul>
 
         <div class="section-title">How to run on macOS (unsigned app)</div>
