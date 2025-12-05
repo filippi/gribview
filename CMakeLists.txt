@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(gribview VERSION 1.1 LANGUAGES C CXX)
+project(gribview VERSION 1.2 LANGUAGES C CXX)
 
 include(GNUInstallDirs)
 

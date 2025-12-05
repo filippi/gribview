@@ -162,6 +162,42 @@
         text-decoration: underline;
     }
 
+    .about {
+        margin-top: 28px;
+        text-align: left;
+        max-width: 560px;
+        margin-left: auto;
+        margin-right: auto;
+        background: #fff;
+        padding: 18px 20px;
+        border-radius: 14px;
+        box-shadow: 0 6px 18px rgba(0,0,0,0.08);
+        color: #444;
+    }
+
+    .about h3 {
+        margin-top: 0;
+        margin-bottom: 10px;
+        font-size: 18px;
+    }
+
+    .update-btn {
+        display: inline-block;
+        margin-top: 10px;
+        background: #0b7cff;
+        color: white;
+        padding: 10px 16px;
+        border-radius: 10px;
+        font-size: 14px;
+        text-decoration: none;
+        font-weight: 600;
+        box-shadow: 0 6px 14px rgba(0,122,255,0.25);
+    }
+
+    .update-btn:hover {
+        background: #0a6cd8;
+    }
+
     footer {
         margin-top: 40px;
         font-size: 13px;
@@ -186,17 +222,17 @@
             </div>
             <div class="button-row">
                 <!-- macOS -->
-                <a class="btn dmg" href="https://github.com/filippi/gribview/releases/download/v1.1/Gribview.dmg">
+                <a class="btn dmg" href="https://github.com/filippi/gribview/releases/download/v1.2/Gribview.dmg">
                     Download macOS DMG
                 </a>
 
                 <!-- Linux -->
-                <a class="btn" href="https://github.com/filippi/gribview/releases/download/v1.1/gribview-1.1-Linux-x86_64.deb">
+                <a class="btn" href="https://github.com/filippi/gribview/releases/download/v1.2/gribview-1.2-Linux-x86_64.deb">
                     Download Linux (.deb)
                 </a>
 
                 <!-- Windows -->
-                <a class="btn" href="https://github.com/filippi/gribview/releases/download/v1.1/gribview-1.1-Windows-AMD64.zip">
+                <a class="btn" href="https://github.com/filippi/gribview/releases/download/v1.2/gribview-1.2-Windows-AMD64.zip">
                     Download Windows (.zip)
                 </a>
             </div>
@@ -238,8 +274,14 @@
             <li><strong>macOS (brew):</strong> <code>brew tap filippi/gribview</code> then <code>brew install gribview</code>.</li>
             <li><strong>macOS (DMG):</strong> download the DMG above, drag <code>Gribview.app</code> to <code>Applications</code>. It is unsigned; you may need to allow it under <em>System Settings → Privacy &amp; Security → Open Anyway</em>.</li>
             <li><strong>Windows:</strong> unzip the package above and run <code>gribview.exe</code>.</li>
-            <li><strong>Linux (Debian/Ubuntu):</strong> download the <code>.deb</code> above and run <code>sudo apt install ./gribview-1.1-Linux-x86_64.deb</code>. This pulls <code>libeccodes</code>, <code>libsdl2</code>, <code>libglew</code> automatically. Other distros can use the tarball from the release and install those libs via their package manager.</li>
+            <li><strong>Linux (Debian/Ubuntu):</strong> download the <code>.deb</code> above and run <code>sudo apt install ./gribview-1.2-Linux-x86_64.deb</code>. This pulls <code>libeccodes</code>, <code>libsdl2</code>, <code>libglew</code> automatically. Other distros can use the tarball from the release and install those libs via their package manager.</li>
         </ul>
+
+        <div class="about">
+            <h3>About &amp; updates</h3>
+            <p>gribview is an open-source GRIB explorer built by Jean-Baptiste Filippi (CNRS / Universita di Corsica). It’s tuned for fast OpenGL viewing, reorganizing/merging/filtering messages, extracting CSV time series/point values, and exporting PNGs or compact GRIB archives.</p>
+            <a class="update-btn" href="https://filippi.github.io/gribview/" target="_blank">Check for updates</a>
+        </div>
 
         <div class="section-title">How to run on macOS (unsigned app)</div>
         <ol>

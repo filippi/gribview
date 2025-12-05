@@ -132,6 +132,7 @@ static size_t g_ExtractionNextIndex = 0;
 static int g_PlotClickRequest = -1;
 static int g_PlotClickedIndex = -1;
 static bool g_ShowAbout = false;
+static const char *kUpdateUrl = "https://filippi.github.io/gribview/";
 
 struct MarkerSample
 {
@@ -1537,7 +1538,7 @@ int main(int argc, char **argv)
             }
             if (ImGui::BeginMenu("About"))
             {
-                if (ImGui::MenuItem("About gribview"))
+                if (ImGui::MenuItem("About / Check for updates"))
                     g_ShowAbout = true;
                 ImGui::EndMenu();
             }

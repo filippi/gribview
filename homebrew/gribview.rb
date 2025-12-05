@@ -1,14 +1,9 @@
 class Gribview < Formula
   desc "Lightweight GRIB data file visualiser/filter/time series extraction"
   homepage "https://github.com/filippi/gribview"
-  url "https://github.com/filippi/gribview/releases/download/v1.1/gribview-1.1.tar.gz"
-  sha256 "1ee0499d5a0daae583ac5b89492940964eed90d421544b3d4ada4a5f86b43636"
+  url "https://github.com/filippi/gribview/releases/download/v1.2/gribview-1.2.tar.gz"
+  sha256 "f5a56bb8f67a379f0323c1c52f6baa42d2d69f1a11670972de4f144bd0114a13"
   license "Apache-2.0"
-
-  bottle do
-    root_url "https://github.com/filippi/gribview/releases/download/v1.1"
-    sha256 cellar: :any, arm64_sequoia: "1ee0499d5a0daae583ac5b89492940964eed90d421544b3d4ada4a5f86b43636"
-  end
 
   depends_on "cmake" => :build
   depends_on "pkg-config" => :build

@@ -1,6 +1,7 @@
 name: Build
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
@@ -30,6 +31,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
+            patchelf \
             libeccodes0 \
             libsdl2-2.0-0 \
             libglew2.2 \
@@ -76,7 +78,7 @@ jobs:
           path: artifacts/${{ runner.os }}
 
   package:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     name: Release packages (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
@@ -95,6 +97,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
+            patchelf \
             libeccodes0 \
             libsdl2-2.0-0 \
             libglew2.2 \
@@ -138,6 +141,49 @@ jobs:
           mkdir -p dist
           cmake -E chdir build cpack -B "${{ github.workspace }}/dist"
 
+      - name: Bundle portable Linux tar (with deps)
+        if: runner.os == 'Linux'
+        env:
+          REF_VERSION: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          VERSION="${REF_VERSION#v}"
+          if [ -z "$VERSION" ] || [[ "$VERSION" == refs/* ]]; then
+            VERSION=$(grep -Po 'project\\(gribview VERSION \\K[0-9.]+' CMakeLists.txt | head -1)
+          fi
+          INSTALL_DIR="${GITHUB_WORKSPACE}/dist/linux-portable"
+          cmake --install build --config Release --prefix "$INSTALL_DIR"
+          mkdir -p "$INSTALL_DIR/lib"
+          ldd "$INSTALL_DIR/bin/gribview" | awk '{print $(NF-1)}' | grep -E '^/' | while read -r lib; do
+            case "$lib" in
+              /lib/*|/usr/lib/*) continue ;;
+            esac
+            cp -n "$lib" "$INSTALL_DIR/lib/" 2>/dev/null || true
+          done
+          patchelf --set-rpath '$ORIGIN/../lib' "$INSTALL_DIR/bin/gribview"
+          tar -C "${GITHUB_WORKSPACE}/dist" -czf "${GITHUB_WORKSPACE}/dist/gribview-${VERSION}-Linux-portable.tar.gz" "$(basename "$INSTALL_DIR")"
+
+      - name: Bundle Windows zip with DLLs
+        if: runner.os == 'Windows'
+        env:
+          REF_VERSION: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          VERSION="${REF_VERSION#v}"
+          if [ -z "$VERSION" ] || [[ "$VERSION" == refs/* ]]; then
+            VERSION=$(grep -Po 'project\\(gribview VERSION \\K[0-9.]+' CMakeLists.txt | head -1)
+          fi
+          PREFIX="$(cygpath -u "${GITHUB_WORKSPACE}")/dist/windows"
+          cmake --install build --config Release --prefix "$PREFIX"
+          ENV_ROOT="$MAMBA_ROOT_PREFIX/envs/gribview"
+          mkdir -p "$PREFIX/bin"
+          for dir in "$ENV_ROOT/Library/bin" "$ENV_ROOT/bin"; do
+            if [ -d "$dir" ]; then
+              cp -n "$dir"/*.dll "$PREFIX/bin/" 2>/dev/null || true
+            fi
+          done
+          7z a "${GITHUB_WORKSPACE}/dist/gribview-${VERSION}-Windows-AMD64.zip" "$PREFIX"
+
       - name: List packages
         run: ls -R dist
 
@@ -148,7 +194,7 @@ jobs:
           path: dist/*
 
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     needs: package
     runs-on: ubuntu-latest
     steps:
