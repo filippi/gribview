@@ -12,3 +12,4 @@ external/imgui/misc/debuggers/imgui.gdb
 external/imgui/misc/debuggers/imgui.natstepfilter
 external/imgui/misc/debuggers/imgui.natvis
 external/imgui/misc/debuggers/README.txt
+tools/generate_release.bash

@@ -1,8 +1,8 @@
 class Gribview < Formula
   desc "Lightweight GRIB data file visualiser/filter/time series extraction"
   homepage "https://github.com/filippi/gribview"
-  url "https://github.com/filippi/gribview/releases/download/v1.2/gribview-1.2.tar.gz"
-  sha256 "f5a56bb8f67a379f0323c1c52f6baa42d2d69f1a11670972de4f144bd0114a13"
+  url "https://github.com/filippi/gribview/releases/download/v1.3/gribview-1.3.tar.gz"
+  sha256 "ed87f918b9341827704431f6ce70a7854ae0a74716822f5b07fddc11f684277f"
   license "Apache-2.0"
 
   depends_on "cmake" => :build
