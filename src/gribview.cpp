@@ -19,6 +19,7 @@
 #include "imgui_impl_opengl3.h"
 #include <SDL.h>
 #include <GL/glew.h>
+#include <png.h>
 #include <eccodes.h>
 
 extern "C"
@@ -174,6 +175,8 @@ static void ClearAllSelections();
 static void RefreshSelectionState(bool requestScroll, int preferredIndex);
 static void UpdateWindowTitle();
 static void EnsureParameterInfo(GribMessage &gm);
+static void OpenUrl(const char *url);
+static void SetWindowIcon(SDL_Window *window);
 
 // ----------------------------------------------------------
 // Destroy texture helper
@@ -184,6 +187,82 @@ static void DestroyTexture(GLuint &texID)
     {
         glDeleteTextures(1, &texID);
         texID = 0;
+    }
+}
+
+// Simple URL opener (relies on SDL2 >= 2.0.14)
+static void OpenUrl(const char *url)
+{
+    if (!url || !*url)
+        return;
+    if (SDL_OpenURL(url) != 0)
+    {
+        fprintf(stderr, "Failed to open URL %s: %s\n", url, SDL_GetError());
+    }
+}
+
+// Load window icon from PNG (tools/icon.png) if available
+static void SetWindowIcon(SDL_Window *window)
+{
+    if (!window)
+        return;
+    const char *iconPath = "tools/icon.png";
+    FILE *fp = fopen(iconPath, "rb");
+    if (!fp)
+        return;
+    png_structp png = png_create_read_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
+    if (!png)
+    {
+        fclose(fp);
+        return;
+    }
+    png_infop info = png_create_info_struct(png);
+    if (!info)
+    {
+        png_destroy_read_struct(&png, NULL, NULL);
+        fclose(fp);
+        return;
+    }
+    if (setjmp(png_jmpbuf(png)))
+    {
+        png_destroy_read_struct(&png, &info, NULL);
+        fclose(fp);
+        return;
+    }
+    png_init_io(png, fp);
+    png_read_info(png, info);
+    int width = png_get_image_width(png, info);
+    int height = png_get_image_height(png, info);
+    png_byte color_type = png_get_color_type(png, info);
+    png_byte bit_depth = png_get_bit_depth(png, info);
+    if (bit_depth == 16)
+        png_set_strip_16(png);
+    if (color_type == PNG_COLOR_TYPE_PALETTE)
+        png_set_palette_to_rgb(png);
+    if (color_type == PNG_COLOR_TYPE_GRAY && bit_depth < 8)
+        png_set_expand_gray_1_2_4_to_8(png);
+    if (png_get_valid(png, info, PNG_INFO_tRNS))
+        png_set_tRNS_to_alpha(png);
+    if (color_type == PNG_COLOR_TYPE_RGB ||
+        color_type == PNG_COLOR_TYPE_GRAY ||
+        color_type == PNG_COLOR_TYPE_PALETTE)
+        png_set_filler(png, 0xFF, PNG_FILLER_AFTER);
+    png_read_update_info(png, info);
+    int rowbytes = png_get_rowbytes(png, info);
+    std::vector<png_byte> imageData(rowbytes * height);
+    std::vector<png_bytep> rowPointers(height);
+    for (int y = 0; y < height; y++)
+        rowPointers[y] = (png_bytep)&imageData[y * rowbytes];
+    png_read_image(png, rowPointers.data());
+    png_destroy_read_struct(&png, &info, NULL);
+    fclose(fp);
+
+    SDL_Surface *surf = SDL_CreateRGBSurfaceWithFormatFrom(
+        imageData.data(), width, height, 32, rowbytes, SDL_PIXELFORMAT_RGBA32);
+    if (surf)
+    {
+        SDL_SetWindowIcon(window, surf);
+        SDL_FreeSurface(surf);
     }
 }
 
@@ -1422,6 +1501,7 @@ int main(int argc, char **argv)
                                 SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
     if (!g_Window)
         return 0;
+    SetWindowIcon(g_Window);
     g_GLContext = SDL_GL_CreateContext(g_Window);
     
     
@@ -2269,14 +2349,25 @@ int main(int argc, char **argv)
         }
         if (g_ShowAbout)
         {
-            ImGui::SetNextWindowSize(ImVec2(460, 0), ImGuiCond_FirstUseEver);
+            ImGui::SetNextWindowSize(ImVec2(520, 0), ImGuiCond_FirstUseEver);
             if (ImGui::Begin("About gribview", &g_ShowAbout, ImGuiWindowFlags_AlwaysAutoResize))
             {
-                ImGui::Text("gribview");
+                ImGui::Text("gribview %s", PROJECT_VERSION);
                 ImGui::Separator();
-                ImGui::TextWrapped("gribview is a lightweight GRIB viewer built on top of ECMWF ecCodes and Dear ImGui.");
-                ImGui::TextWrapped("Developed by Jean-Baptiste Filippi (CNRS, University of Corsica).");
-                ImGui::TextWrapped("Load GRIB/GRIB2 files, explore metadata, adjust colormaps, place markers, extract series, and export PNG, CSV, or GRIB selections.");
+                ImGui::TextWrapped("A lightweight, fast GRIB explorer built on ECMWF ecCodes, SDL2/OpenGL/GLEW, and Dear ImGui.");
+                ImGui::TextWrapped("Browse, reorganize/merge/append/filter messages, inspect metadata, extract CSV time series/point values, and export PNG or compact GRIB archives.");
+                ImGui::Separator();
+                ImGui::Text("Author: Jean-Baptiste Filippi (CNRS / Universita di Corsica)");
+                ImGui::Text("Project page: filippi.github.io/gribview");
+                ImGui::Spacing();
+                if (ImGui::Button("Check for updates"))
+                {
+                    ImGui::SetClipboardText(kUpdateUrl);
+                    OpenUrl(kUpdateUrl);
+                }
+                ImGui::SameLine();
+                ImGui::TextDisabled("(opens %s)", kUpdateUrl);
+                ImGui::Spacing();
                 if (ImGui::Button("Close##aboutwin"))
                     g_ShowAbout = false;
             }

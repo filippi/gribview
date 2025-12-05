@@ -6,6 +6,7 @@ include(GNUInstallDirs)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR})
+add_compile_definitions(PROJECT_VERSION="${PROJECT_VERSION}")
 
 if(MSVC)
   add_compile_options(/permissive- /W4)
@@ -15,6 +16,7 @@ endif()
 
 find_package(OpenGL REQUIRED)
 find_package(GLEW REQUIRED)
+find_package(PNG)
 
 # SDL2 ------------------------------------------------------
 find_package(SDL2 CONFIG QUIET)
@@ -144,6 +146,9 @@ if(SDL2_CORE_LIBS)
   list(APPEND _gribview_libs ${SDL2_CORE_LIBS})
 endif()
 target_link_libraries(gribview PRIVATE ${_gribview_libs})
+if(PNG_FOUND)
+  target_link_libraries(gribview PRIVATE PNG::PNG)
+endif()
 
 install(TARGETS gribview RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
