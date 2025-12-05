@@ -182,6 +182,16 @@ jobs:
               cp -n "$dir"/*.dll "$PREFIX/bin/" 2>/dev/null || true
             fi
           done
+          for dir in "$ENV_ROOT/Library/share/eccodes" "$ENV_ROOT/share/eccodes"; do
+            if [ -d "$dir/definitions" ]; then
+              echo "Copying ecCodes definitions/samples from $dir"
+              mkdir -p "$PREFIX/Resources/eccodes"
+              cp -a "$dir/definitions" "$PREFIX/Resources/eccodes/" || true
+              cp -a "$dir/samples" "$PREFIX/Resources/eccodes/" || true
+              break
+            fi
+          done
+          rm -f "${GITHUB_WORKSPACE}/dist/gribview-${VERSION}-Windows-AMD64.zip"
           7z a "${GITHUB_WORKSPACE}/dist/gribview-${VERSION}-Windows-AMD64.zip" "$PREFIX"
 
       - name: List packages
