@@ -129,7 +129,9 @@ static int g_DraggingMarkerIndex = -1;
 static std::string g_ExtractionStatus;
 static char g_MarkersCsvPath[512] = "markers.csv";
 static bool g_ExtractionRunning = false;
+static size_t g_ExtractionStartIndex = 0;
 static size_t g_ExtractionNextIndex = 0;
+static long long g_ExtractionLastTimestamp = -1;
 static int g_PlotClickRequest = -1;
 static int g_PlotClickedIndex = -1;
 static bool g_ShowAbout = false;
@@ -152,6 +154,85 @@ struct Marker
 };
 
 static std::vector<Marker> g_Markers;
+
+static std::string BuildMessageKey(const GribMessage &gm);
+static GribMessage *FindMessageByKey(const std::string &key);
+
+static size_t LargestSeriesLength()
+{
+    size_t maxLen = 0;
+    for (const auto &m : g_Markers)
+        maxLen = std::max(maxLen, m.series.size());
+    return maxLen;
+}
+
+static MarkerSample MakePaddingSample(size_t idx, const Marker *ref)
+{
+    MarkerSample samp;
+    samp.value = std::numeric_limits<double>::quiet_NaN();
+    if (ref && idx < ref->series.size())
+        samp.messageKey = ref->series[idx].messageKey;
+    else if (g_ExtractionStartIndex + idx < g_GribMessages.size())
+        samp.messageKey = BuildMessageKey(g_GribMessages[g_ExtractionStartIndex + idx]);
+    else if (idx < g_GribMessages.size())
+        samp.messageKey = BuildMessageKey(g_GribMessages[idx]);
+    return samp;
+}
+
+static void PadMarkerToLength(Marker &m, size_t targetLen, const Marker *ref)
+{
+    if (m.series.size() >= targetLen)
+        return;
+    m.series.reserve(targetLen);
+    for (size_t i = m.series.size(); i < targetLen; ++i)
+        m.series.push_back(MakePaddingSample(i, ref));
+}
+
+static void PadAllMarkersToMaxLength()
+{
+    size_t maxLen = LargestSeriesLength();
+    if (maxLen == 0)
+        return;
+    const Marker *ref = nullptr;
+    for (const auto &m : g_Markers)
+    {
+        if (m.series.size() == maxLen)
+        {
+            ref = &m;
+            break;
+        }
+    }
+    for (auto &m : g_Markers)
+        PadMarkerToLength(m, maxLen, ref);
+}
+
+static GribMessage *MessageForSampleIndex(size_t sampleIdx)
+{
+    for (const auto &m : g_Markers)
+    {
+        if (sampleIdx < m.series.size())
+        {
+            GribMessage *gm = FindMessageByKey(m.series[sampleIdx].messageKey);
+            if (gm)
+                return gm;
+        }
+    }
+    size_t globalIdx = g_ExtractionStartIndex + sampleIdx;
+    if (globalIdx < g_GribMessages.size())
+        return &g_GribMessages[globalIdx];
+    return nullptr;
+}
+
+static int MessageIndexFromSample(size_t sampleIdx)
+{
+    GribMessage *gm = MessageForSampleIndex(sampleIdx);
+    if (!gm || g_GribMessages.empty())
+        return -1;
+    int idx = (int)(gm - &g_GribMessages[0]);
+    if (idx < 0 || idx >= (int)g_GribMessages.size())
+        return -1;
+    return idx;
+}
 
 // For the GRIB table and keys select popup
 struct UiState
@@ -383,6 +464,70 @@ static GribMessage *FindMessageByKey(const std::string &key)
     return nullptr;
 }
 
+static bool ParseLong(const std::string &s, long &outValue)
+{
+    if (s.empty())
+        return false;
+    char *endPtr = nullptr;
+    outValue = strtol(s.c_str(), &endPtr, 10);
+    return endPtr && *endPtr == '\0';
+}
+
+static bool GetValidTimestamp(const GribMessage &gm, long long &outTs)
+{
+    long date = gm.dataDate;
+    long time = gm.dataTime;
+    long tmp = 0;
+    auto itD = gm.keyValueMap.find("validityDate");
+    if (itD != gm.keyValueMap.end() && ParseLong(itD->second, tmp))
+        date = tmp;
+    auto itT = gm.keyValueMap.find("validityTime");
+    if (itT != gm.keyValueMap.end() && ParseLong(itT->second, tmp))
+        time = tmp;
+    if (date <= 0 || time < 0)
+        return false;
+    // Compact timestamp yyyymmddHHMM for monotonic checks.
+    outTs = (long long)date * 10000LL + (long long)time;
+    return true;
+}
+
+static std::string FormatDateLong(long yyyymmdd)
+{
+    int year = (int)(yyyymmdd / 10000);
+    int month = (int)((yyyymmdd / 100) % 100);
+    int day = (int)(yyyymmdd % 100);
+    if (year <= 0 || month <= 0 || month > 12 || day <= 0 || day > 31)
+        return std::to_string(yyyymmdd);
+    char buf[32];
+    snprintf(buf, sizeof(buf), "%04d-%02d-%02d", year, month, day);
+    return buf;
+}
+
+static std::string FormatTimeLong(long hhmm)
+{
+    int hour = (int)(hhmm / 100);
+    int minute = (int)(hhmm % 100);
+    if (hour < 0 || hour > 23 || minute < 0 || minute > 59)
+        return std::to_string(hhmm);
+    char buf[16];
+    snprintf(buf, sizeof(buf), "%02d:%02d", hour, minute);
+    return buf;
+}
+
+static std::string FormatValidDateTime(const GribMessage &gm)
+{
+    long date = gm.dataDate;
+    long time = gm.dataTime;
+    long tmp = 0;
+    auto itD = gm.keyValueMap.find("validityDate");
+    if (itD != gm.keyValueMap.end() && ParseLong(itD->second, tmp))
+        date = tmp;
+    auto itT = gm.keyValueMap.find("validityTime");
+    if (itT != gm.keyValueMap.end() && ParseLong(itT->second, tmp))
+        time = tmp;
+    return FormatDateLong(date) + " " + FormatTimeLong(time);
+}
+
 static ImU32 MarkerColor(int idx)
 {
     static ImU32 palette[] = {
@@ -486,6 +631,8 @@ static void ClearMarkerSeries()
         m.status.clear();
     }
     g_PlotClickedIndex = -1;
+    g_ExtractionStartIndex = 0;
+    g_ExtractionLastTimestamp = -1;
 }
 
 static void StartMarkerExtraction()
@@ -498,7 +645,9 @@ static void StartMarkerExtraction()
     size_t startIdx = (g_SelectedMessageIndex >= 0 && g_SelectedMessageIndex < (int)g_GribMessages.size())
                           ? (size_t)g_SelectedMessageIndex
                           : 0;
+    g_ExtractionStartIndex = startIdx;
     g_ExtractionNextIndex = startIdx;
+    g_ExtractionLastTimestamp = -1;
     g_ExtractionRunning = true;
 }
 
@@ -520,6 +669,14 @@ static void StepMarkerExtraction()
     }
     size_t idx = g_ExtractionNextIndex++;
     GribMessage &gm = g_GribMessages[idx];
+    long long ts = -1;
+    bool tsOk = GetValidTimestamp(gm, ts);
+    if (tsOk && g_ExtractionLastTimestamp >= 0 && ts <= g_ExtractionLastTimestamp)
+    {
+        g_ExtractionRunning = false;
+        g_ExtractionStatus = "Stopped: non-monotonic timestamp at frame " + std::to_string(idx + 1) + " (" + FormatValidDateTime(gm) + ")";
+        return;
+    }
     std::vector<double> data;
     bool hasData = LoadMessageData(gm, data);
     for (auto &m : g_Markers)
@@ -536,6 +693,8 @@ static void StepMarkerExtraction()
         m.series.push_back(samp);
     }
     std::vector<double>().swap(data);
+    if (tsOk)
+        g_ExtractionLastTimestamp = ts;
     ClearAllSelections();
     gm.selected = true;
     g_LastSelectionAnchor = (int)idx;
@@ -590,6 +749,20 @@ static void CreateMarkerAt(double lat, double lon)
     m.id = (int)g_Markers.size() + 1;
     m.lat = lat;
     m.lon = lon;
+    size_t existingLen = LargestSeriesLength();
+    const Marker *ref = nullptr;
+    if (existingLen > 0)
+    {
+        for (const auto &other : g_Markers)
+        {
+            if (other.series.size() == existingLen)
+            {
+                ref = &other;
+                break;
+            }
+        }
+        PadMarkerToLength(m, existingLen, ref);
+    }
     g_Markers.push_back(m);
 }
 
@@ -617,6 +790,14 @@ static void DrawMarkersPlot(const ImVec2 &size)
         ImGui::Text("No marker data");
         return;
     }
+    PadAllMarkersToMaxLength();
+    size_t sampleCount = LargestSeriesLength();
+    if (sampleCount == 0)
+    {
+        ImGui::Text("No samples extracted yet");
+        ImGui::Dummy(size);
+        return;
+    }
     struct SeriesExtrema
     {
         double minVal = std::numeric_limits<double>::infinity();
@@ -628,14 +809,17 @@ static void DrawMarkersPlot(const ImVec2 &size)
     std::vector<SeriesExtrema> extrema(g_Markers.size());
     g_PlotClickRequest = -1;
     float width = size.x;
-    float height = size.y;
+    float fullHeight = size.y;
+    float labelSpace = ImGui::GetTextLineHeightWithSpacing() * 1.2f;
+    float plotHeight = std::max(24.0f, fullHeight - labelSpace);
     ImDrawList *dl = ImGui::GetWindowDrawList();
     ImVec2 origin = ImGui::GetCursorScreenPos();
     ImVec2 plotMin = origin;
-    ImVec2 plotMax(origin.x + width, origin.y + height);
+    ImVec2 plotMax(origin.x + width, origin.y + plotHeight);
+    float xLabelY = plotMax.y + 2.0f;
     dl->AddRectFilled(plotMin, plotMax, IM_COL32(30, 30, 30, 255));
-    dl->AddRect(plotMin, plotMax, IM_COL32(80, 80, 80, 255));
-    size_t maxCount = 0;
+    dl->AddRect(plotMin, plotMax, IM_COL32(140, 140, 140, 200));
+    size_t maxCount = sampleCount;
     double vMin = std::numeric_limits<double>::infinity();
     double vMax = -std::numeric_limits<double>::infinity();
     for (size_t mi = 0; mi < g_Markers.size(); ++mi)
@@ -678,18 +862,27 @@ static void DrawMarkersPlot(const ImVec2 &size)
         float t = (float)idx / (float)(maxCount - 1);
         float x = plotMin.x + t * (width - 1.0f);
         float factor = (float)((value - vMin) / (vMax - vMin));
-        float y = plotMax.y - factor * (height - 1.0f);
+        float y = plotMax.y - factor * (plotHeight - 1.0f);
         return ImVec2(x, y);
     };
+    auto formatTickValue = [](double value) -> std::string {
+        char buf[32];
+        snprintf(buf, sizeof(buf), "%.3g", value);
+        return std::string(buf);
+    };
     // Axes and ticks
-    dl->AddLine(ImVec2(plotMin.x, plotMax.y), ImVec2(plotMax.x, plotMax.y), IM_COL32(200, 200, 200, 255));
-    dl->AddLine(ImVec2(plotMin.x, plotMin.y), ImVec2(plotMin.x, plotMax.y), IM_COL32(200, 200, 200, 255));
+    ImU32 axisCol = IM_COL32(150, 150, 150, 220);
+    ImU32 majorTickCol = IM_COL32(170, 170, 170, 220);
+    ImU32 minorTickCol = IM_COL32(140, 140, 140, 140);
+    dl->AddLine(ImVec2(plotMin.x, plotMax.y), ImVec2(plotMax.x, plotMax.y), axisCol);
+    dl->AddLine(ImVec2(plotMin.x, plotMin.y), ImVec2(plotMin.x, plotMax.y), axisCol);
     auto drawTick = [&](double value, bool major) {
         float factor = (float)((value - vMin) / (vMax - vMin));
-        float y = plotMax.y - factor * (height - 1.0f);
-        ImU32 col = major ? IM_COL32(200, 200, 200, 255) : IM_COL32(120, 120, 120, 120);
+        float y = plotMax.y - factor * (plotHeight - 1.0f);
+        ImU32 col = major ? majorTickCol : minorTickCol;
         dl->AddLine(ImVec2(plotMin.x, y), ImVec2(plotMax.x, y), col, major ? 1.5f : 1.0f);
-        dl->AddText(ImVec2(plotMin.x + 4, y - 10), IM_COL32(230, 230, 230, 255), (std::to_string((float)value)).c_str());
+        std::string lbl = formatTickValue(value);
+        dl->AddText(ImVec2(plotMin.x + 4, y - 10), IM_COL32(210, 210, 210, 255), lbl.c_str());
     };
     drawTick(vMax, true);
     drawTick(vMin, true);
@@ -697,6 +890,24 @@ static void DrawMarkersPlot(const ImVec2 &size)
     drawTick(mid, false);
     if (vMin < 0.0 && vMax > 0.0)
         drawTick(0.0, true);
+    // X ticks (dates)
+    size_t desiredTicks = (sampleCount >= 2) ? 2 : sampleCount;
+    if (desiredTicks > 0)
+    {
+        for (size_t i = 0; i < desiredTicks; ++i)
+        {
+            size_t idx = (desiredTicks == 1) ? 0 : (size_t)std::round((double)i * (double)(sampleCount - 1) / (double)(desiredTicks - 1));
+            idx = std::min(idx, sampleCount - 1);
+            float t = (float)idx / (float)(maxCount - 1);
+            float x = plotMin.x + t * (width - 1.0f);
+            dl->AddLine(ImVec2(x, plotMin.y), ImVec2(x, plotMax.y), IM_COL32(120, 120, 120, 80));
+            GribMessage *gm = MessageForSampleIndex(idx);
+            std::string tickLabel = gm ? FormatValidDateTime(*gm) : ("Idx " + std::to_string(idx + 1));
+            ImVec2 lblSize = ImGui::CalcTextSize(tickLabel.c_str());
+            float lblX = std::clamp(x - lblSize.x * 0.5f, plotMin.x, plotMax.x - lblSize.x);
+            dl->AddText(ImVec2(lblX, xLabelY), IM_COL32(190, 210, 220, 255), tickLabel.c_str());
+        }
+    }
     // Data lines
     for (size_t mi = 0; mi < g_Markers.size(); mi++)
     {
@@ -719,49 +930,42 @@ static void DrawMarkersPlot(const ImVec2 &size)
             hasPrev = true;
         }
     }
-    // Draw extrema annotations near the right edge using the series color.
-    float textLineHeight = ImGui::GetTextLineHeight();
-    for (size_t mi = 0; mi < g_Markers.size(); mi++)
-    {
-        const SeriesExtrema &ex = extrema[mi];
-        if (!ex.hasValue)
-            continue;
-        ImU32 col = MarkerColor((int)mi);
-        ImVec4 colVec = ImGui::ColorConvertU32ToFloat4(col);
-        char maxBuf[32];
-        char minBuf[32];
-        snprintf(maxBuf, sizeof(maxBuf), "max %.2f", ex.maxVal);
-        snprintf(minBuf, sizeof(minBuf), "min %.2f", ex.minVal);
-        ImVec2 maxPos = toScreen(ex.maxIdx, ex.maxVal);
-        ImVec2 minPos = toScreen(ex.minIdx, ex.minVal);
-        ImVec2 maxTextPos(plotMax.x - ImGui::CalcTextSize(maxBuf).x - 6.0f,
-                          std::clamp(maxPos.y - 10.0f, plotMin.y + 2.0f, plotMax.y - textLineHeight - 2.0f));
-        ImVec2 minTextPos(plotMax.x - ImGui::CalcTextSize(minBuf).x - 6.0f,
-                          std::clamp(minPos.y + 4.0f, plotMin.y + 2.0f, plotMax.y - textLineHeight - 2.0f));
-        // Avoid overlap between min/max labels for the same series.
-        if (fabs(maxTextPos.y - minTextPos.y) < textLineHeight + 2.0f)
-            minTextPos.y = std::min(plotMax.y - textLineHeight - 2.0f, maxTextPos.y + textLineHeight + 2.0f);
-        dl->AddText(maxTextPos, ImGui::ColorConvertFloat4ToU32(colVec), maxBuf);
-        dl->AddText(minTextPos, ImGui::ColorConvertFloat4ToU32(colVec), minBuf);
-    }
     if (g_PlotClickedIndex >= 0 && maxCount > 1)
     {
         float t = (float)g_PlotClickedIndex / (float)(maxCount - 1);
         float x = plotMin.x + t * (width - 1.0f);
         dl->AddLine(ImVec2(x, plotMin.y), ImVec2(x, plotMax.y), IM_COL32(120, 220, 120, 200), 2.0f);
+        GribMessage *gm = MessageForSampleIndex((size_t)g_PlotClickedIndex);
+        if (gm)
+        {
+            std::string validTxt = FormatValidDateTime(*gm);
+            ImVec2 txtSize = ImGui::CalcTextSize(validTxt.c_str());
+            float txtX = std::clamp(x - txtSize.x * 0.5f, plotMin.x + 2.0f, plotMax.x - txtSize.x - 2.0f);
+            dl->AddText(ImVec2(txtX, plotMin.y + 4.0f), IM_COL32(120, 220, 120, 230), validTxt.c_str());
+        }
     }
-    ImGui::Dummy(ImVec2(width, height));
-    if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+    auto setPlotSelection = [&](int newIdx) {
+        newIdx = std::clamp(newIdx, 0, (int)sampleCount - 1);
+        g_PlotClickedIndex = newIdx;
+        int msgIdx = MessageIndexFromSample((size_t)newIdx);
+        g_PlotClickRequest = (msgIdx >= 0) ? msgIdx : -1;
+    };
+    ImGui::Dummy(ImVec2(width, fullHeight));
+    bool plotHovered = ImGui::IsItemHovered();
+    if (plotHovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
     {
         ImVec2 mp = ImGui::GetMousePos();
         float relX = (mp.x - plotMin.x) / (width - 1.0f);
         relX = std::clamp(relX, 0.0f, 1.0f);
         size_t idx = (size_t)std::round(relX * (float)(maxCount - 1));
-        if (!g_GribMessages.empty())
-        {
-            g_PlotClickedIndex = (int)idx;
-            g_PlotClickRequest = (int)std::min(idx, g_GribMessages.size() - 1);
-        }
+        setPlotSelection((int)idx);
+    }
+    if ((plotHovered || g_PlotClickedIndex >= 0) && sampleCount > 0)
+    {
+        if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow))
+            setPlotSelection(g_PlotClickedIndex > 0 ? g_PlotClickedIndex - 1 : 0);
+        if (ImGui::IsKeyPressed(ImGuiKey_RightArrow))
+            setPlotSelection(std::min(g_PlotClickedIndex + 1, (int)sampleCount - 1));
     }
 }
 
@@ -1769,12 +1973,13 @@ int main(int argc, char **argv)
         }
         ImGui::Separator();
         // Markers
-        if (ImGui::Button("Add marker"))
+        float twoBtnW = (ImGui::GetContentRegionAvail().x - style.ItemSpacing.x) * 0.5f;
+        if (ImGui::Button("Add marker", ImVec2(twoBtnW, 0.0f)))
         {
             g_AddMarkerMode = true;
         }
         ImGui::SameLine();
-        if (ImGui::Button("Run extraction"))
+        if (ImGui::Button("Run extraction", ImVec2(twoBtnW, 0.0f)))
         {
             StartMarkerExtraction();
         }
