@@ -136,6 +136,7 @@ static int g_PlotClickRequest = -1;
 static int g_PlotClickedIndex = -1;
 static bool g_ShowAbout = false;
 static const char *kUpdateUrl = "https://filippi.github.io/gribview/";
+static bool g_ShowLeftPanel = true;
 
 struct MarkerSample
 {
@@ -1762,6 +1763,7 @@ int main(int argc, char **argv)
     g_UiState.displayedKeys.push_back("level");
     bool done = false;
     static std::vector<std::string> colormapNames;
+    static bool leftInit = true;
     while (!done)
     {
         SDL_Event ev;
@@ -1830,500 +1832,502 @@ int main(int argc, char **argv)
         }
         PromptFileDialogIfNeeded();
         StepMarkerExtraction();
-        // Left panel
+        // Left panel (fixed, collapsible sections)
         float leftPanelHeight = (float)g_WindowHeight - menuBarHeight;
         ImGui::SetNextWindowPos(ImVec2(0, menuBarHeight), ImGuiCond_Always);
-        ImGui::SetNextWindowSize(ImVec2(350, leftPanelHeight), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2(360, leftPanelHeight), ImGuiCond_Always);
         ImGui::Begin("LeftPanel", nullptr,
                      ImGuiWindowFlags_NoMove |
                          ImGuiWindowFlags_NoResize |
                          ImGuiWindowFlags_NoCollapse |
                          ImGuiWindowFlags_NoTitleBar);
-        // Color scale settings (compact)
-        if (ImGui::BeginTable("MinMaxTable", 2, ImGuiTableFlags_SizingStretchProp))
-        {
-            ImGui::TableNextColumn();
-            ImGui::InputFloat("Min", &g_UserMinVal);
-            ImGui::TableNextColumn();
-            ImGui::InputFloat("Max", &g_UserMaxVal);
-            ImGui::EndTable();
-        }
         ImGuiStyle &style = ImGui::GetStyle();
-        float btnW = ImGui::CalcTextSize("Refit Data").x + style.FramePadding.x * 2.0f + 8.0f;
-        ImVec2 btnSize(btnW, 0.0f);
-        ImGui::Checkbox("Auto-Fit", &g_AutoFit);
-        ImGui::SameLine();
-        if (ImGui::Button("Refit Data##colsc", btnSize))
+        if (ImGui::CollapsingHeader("Color Scale", ImGuiTreeNodeFlags_DefaultOpen))
         {
-            g_AutoFit = true;
-            GenerateTextureForSelectedMessage();
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Apply##colsc", btnSize))
-            GenerateTextureForSelectedMessage();
-        ImGui::Separator();
-        // Colormap selection
-        if (colormapNames.empty())
-        {
-            for (auto &kv : colormapMap)
-                colormapNames.push_back(kv.first);
-            std::sort(colormapNames.begin(), colormapNames.end());
-        }
-        static int currentComboIdx = 0;
-        for (int c = 0; c < (int)colormapNames.size(); c++)
-        {
-            if (colormapNames[c] == g_ChosenColormapName)
+            if (ImGui::BeginTable("MinMaxTable", 2, ImGuiTableFlags_SizingStretchProp))
             {
-                currentComboIdx = c;
-                break;
+                ImGui::TableNextColumn();
+                ImGui::InputFloat("Min", &g_UserMinVal);
+                ImGui::TableNextColumn();
+                ImGui::InputFloat("Max", &g_UserMaxVal);
+                ImGui::EndTable();
             }
+            float btnW = ImGui::CalcTextSize("Refit Data").x + style.FramePadding.x * 2.0f + 8.0f;
+            ImVec2 btnSize(btnW, 0.0f);
+            ImGui::Checkbox("Auto-Fit", &g_AutoFit);
+            ImGui::SameLine();
+            if (ImGui::Button("Refit Data##colsc", btnSize))
+            {
+                g_AutoFit = true;
+                GenerateTextureForSelectedMessage();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Apply##colsc", btnSize))
+                GenerateTextureForSelectedMessage();
         }
-        ImGui::TextUnformatted("Colormap");
-        ImGui::SameLine();
-        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
-        if (ImGui::BeginCombo("##Colormap", g_ChosenColormapName.c_str()))
+        if (ImGui::CollapsingHeader("Colormap", ImGuiTreeNodeFlags_DefaultOpen))
         {
+            if (colormapNames.empty())
+            {
+                for (auto &kv : colormapMap)
+                    colormapNames.push_back(kv.first);
+                std::sort(colormapNames.begin(), colormapNames.end());
+            }
+            static int currentComboIdx = 0;
             for (int c = 0; c < (int)colormapNames.size(); c++)
             {
-                bool sel = (c == currentComboIdx);
-                if (ImGui::Selectable(colormapNames[c].c_str(), sel))
+                if (colormapNames[c] == g_ChosenColormapName)
                 {
                     currentComboIdx = c;
-                    g_ChosenColormapName = colormapNames[c];
-                    GenerateTextureForSelectedMessage();
+                    break;
                 }
-                if (sel)
-                    ImGui::SetItemDefaultFocus();
             }
-            ImGui::EndCombo();
+            ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
+            if (ImGui::BeginCombo("##Colormap", g_ChosenColormapName.c_str()))
+            {
+                for (int c = 0; c < (int)colormapNames.size(); c++)
+                {
+                    bool sel = (c == currentComboIdx);
+                    if (ImGui::Selectable(colormapNames[c].c_str(), sel))
+                    {
+                        currentComboIdx = c;
+                        g_ChosenColormapName = colormapNames[c];
+                        GenerateTextureForSelectedMessage();
+                    }
+                    if (sel)
+                        ImGui::SetItemDefaultFocus();
+                }
+                ImGui::EndCombo();
+            }
         }
-        ImGui::Separator();
-        // PNG path + action
-        ImGui::TextUnformatted("PNG");
-        ImGui::SameLine();
-        float browseWidth = ImGui::CalcTextSize("Browse").x + style.FramePadding.x * 2.0f;
-        float savePngWidth = ImGui::CalcTextSize("Save PNG").x + style.FramePadding.x * 2.0f;
-        float pngInputWidth = ImGui::GetContentRegionAvail().x - savePngWidth - browseWidth - style.ItemSpacing.x * 2.0f;
-        pngInputWidth = std::max(pngInputWidth, 80.0f);
-        ImGui::SetNextItemWidth(pngInputWidth);
-        ImGui::InputText("##pngpath", g_SaveImagePath, IM_ARRAYSIZE(g_SaveImagePath));
-        ImGui::SameLine();
-        if (ImGui::Button("Save PNG", ImVec2(savePngWidth, 0.0f)))
-            SaveCurrentImagePNG(g_SaveImagePath);
-        ImGui::SameLine();
-        if (ImGui::Button("Browse##pngpath", ImVec2(browseWidth, 0.0f)))
+        if (ImGui::CollapsingHeader("Export PNG", ImGuiTreeNodeFlags_DefaultOpen))
         {
-            const char *patterns[] = {"*.png"};
-            const char *choice = tinyfd_saveFileDialog("Save PNG", g_SaveImagePath, 1, patterns, "PNG files");
-            if (choice)
-                SetPathBuffer(g_SaveImagePath, IM_ARRAYSIZE(g_SaveImagePath), choice);
+            ImGui::TextUnformatted("PNG");
+            ImGui::SameLine();
+            float browseWidth = ImGui::CalcTextSize("Browse").x + style.FramePadding.x * 2.0f;
+            float savePngWidth = ImGui::CalcTextSize("Save PNG").x + style.FramePadding.x * 2.0f;
+            float pngInputWidth = ImGui::GetContentRegionAvail().x - savePngWidth - browseWidth - style.ItemSpacing.x * 2.0f;
+            pngInputWidth = std::max(pngInputWidth, 80.0f);
+            ImGui::SetNextItemWidth(pngInputWidth);
+            ImGui::InputText("##pngpath", g_SaveImagePath, IM_ARRAYSIZE(g_SaveImagePath));
+            ImGui::SameLine();
+            if (ImGui::Button("Save PNG", ImVec2(savePngWidth, 0.0f)))
+                SaveCurrentImagePNG(g_SaveImagePath);
+            ImGui::SameLine();
+            if (ImGui::Button("Browse##pngpath", ImVec2(browseWidth, 0.0f)))
+            {
+                const char *patterns[] = {"*.png"};
+                const char *choice = tinyfd_saveFileDialog("Save PNG", g_SaveImagePath, 1, patterns, "PNG files");
+                if (choice)
+                    SetPathBuffer(g_SaveImagePath, IM_ARRAYSIZE(g_SaveImagePath), choice);
+            }
         }
-        ImGui::Separator();
-        int selectedCount = 0;
-        for (auto &msg : g_GribMessages)
+        if (ImGui::CollapsingHeader("Messages", ImGuiTreeNodeFlags_DefaultOpen))
         {
-            if (msg.selected)
-                selectedCount++;
-        }
-        ImGui::TextUnformatted("Message");
-        ImGui::SameLine();
-        float saveSelWidth = ImGui::CalcTextSize("Save selection").x + style.FramePadding.x * 2.0f;
-        float selInputWidth = ImGui::GetContentRegionAvail().x - saveSelWidth - browseWidth - style.ItemSpacing.x * 2.0f;
-        selInputWidth = std::max(selInputWidth, 80.0f);
-        ImGui::SetNextItemWidth(selInputWidth);
-        ImGui::InputText("##gribpath", g_SaveGribPath, IM_ARRAYSIZE(g_SaveGribPath));
-        ImGui::SameLine();
-        ImGui::BeginDisabled(selectedCount == 0);
-        if (ImGui::Button("Save selection", ImVec2(saveSelWidth, 0.0f)))
-        {
-            std::vector<GribMessage *> toWrite;
-            toWrite.reserve(selectedCount);
+            float browseWidth = ImGui::CalcTextSize("Browse").x + style.FramePadding.x * 2.0f;
+            int selectedCount = 0;
             for (auto &msg : g_GribMessages)
             {
                 if (msg.selected)
-                    toWrite.push_back(&msg);
+                    selectedCount++;
             }
-            size_t saved = 0;
-            bool ok = SaveMessagesToGrib(toWrite, g_SaveGribPath, saved);
-            g_SaveSelectionSuccess = ok;
-            if (ok)
-                g_SaveSelectionStatus = "Saved " + std::to_string(saved) + " message(s) to " + std::string(g_SaveGribPath);
-            else
-            g_SaveSelectionStatus = "Failed to save selection. Check file permissions.";
-        }
-        ImGui::EndDisabled();
-        ImGui::SameLine();
-        if (ImGui::Button("Browse##gribpath", ImVec2(browseWidth, 0.0f)))
-        {
-            const char *patterns[] = {"*.grib", "*.grb", "*.grib2", "*.grb2"};
-            const char *choice = tinyfd_saveFileDialog("Save GRIB selection", g_SaveGribPath, 4, patterns, "GRIB files");
-            if (choice)
-                SetPathBuffer(g_SaveGribPath, IM_ARRAYSIZE(g_SaveGribPath), choice);
-        }
-        ImGui::SameLine();
-        if (selectedCount > 0)
-            ImGui::Text("%d msg", selectedCount);
-        else
-            ImGui::Text("No selection");
-        if (!g_SaveSelectionStatus.empty())
-        {
-            ImVec4 color = g_SaveSelectionSuccess ? ImVec4(0.4f, 0.8f, 0.4f, 1.0f)
-                                                  : ImVec4(0.9f, 0.3f, 0.3f, 1.0f);
-            ImGui::TextColored(color, "%s", g_SaveSelectionStatus.c_str());
-        }
-        ImGui::Separator();
-        // Markers
-        float twoBtnW = (ImGui::GetContentRegionAvail().x - style.ItemSpacing.x) * 0.5f;
-        if (ImGui::Button("Add marker", ImVec2(twoBtnW, 0.0f)))
-        {
-            g_AddMarkerMode = true;
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Run extraction", ImVec2(twoBtnW, 0.0f)))
-        {
-            StartMarkerExtraction();
-        }
-        ImGui::SameLine();
-        if (!g_ExtractionStatus.empty())
-            ImGui::Text("%s", g_ExtractionStatus.c_str());
-        if (g_AddMarkerMode)
-            ImGui::TextColored(ImVec4(0.9f, 0.8f, 0.2f, 1.0f), "Click map to place marker");
-        if (g_Markers.empty())
-            ImGui::Text("No markers yet");
-        else
-        {
-            GribMessage *selectedGM = nullptr;
-            std::vector<double> selectedData;
-            bool selectedHasData = false;
-            if (g_SelectedMessageIndex >= 0 && g_SelectedMessageIndex < (int)g_GribMessages.size())
+            ImGui::TextUnformatted("Save selection");
+            float saveSelWidth = ImGui::CalcTextSize("Save selection").x + style.FramePadding.x * 2.0f;
+            float selInputWidth = ImGui::GetContentRegionAvail().x - saveSelWidth - browseWidth - style.ItemSpacing.x * 2.0f;
+            selInputWidth = std::max(selInputWidth, 80.0f);
+            ImGui::SetNextItemWidth(selInputWidth);
+            ImGui::InputText("##gribpath", g_SaveGribPath, IM_ARRAYSIZE(g_SaveGribPath));
+            ImGui::SameLine();
+            ImGui::BeginDisabled(selectedCount == 0);
+            if (ImGui::Button("Save selection", ImVec2(saveSelWidth, 0.0f)))
             {
-                selectedGM = &g_GribMessages[g_SelectedMessageIndex];
-                selectedHasData = LoadMessageData(*selectedGM, selectedData);
-            }
-            for (size_t i = 0; i < g_Markers.size(); i++)
-            {
-                auto &m = g_Markers[i];
-                ImGui::PushID((int)i);
-                ImVec4 c = MarkerColorVec4((int)i);
-                char valBuf[32];
-                bool valOk = false;
-                double val = 0.0;
-                if (selectedHasData && selectedGM)
+                std::vector<GribMessage *> toWrite;
+                toWrite.reserve(selectedCount);
+                for (auto &msg : g_GribMessages)
                 {
-                    if (SampleValueFromData(*selectedGM, selectedData, m.lat, m.lon, val))
-                        valOk = true;
+                    if (msg.selected)
+                        toWrite.push_back(&msg);
                 }
-                if (valOk)
-                    snprintf(valBuf, sizeof(valBuf), "%.2f", val);
+                size_t saved = 0;
+                bool ok = SaveMessagesToGrib(toWrite, g_SaveGribPath, saved);
+                g_SaveSelectionSuccess = ok;
+                if (ok)
+                    g_SaveSelectionStatus = "Saved " + std::to_string(saved) + " message(s) to " + std::string(g_SaveGribPath);
                 else
-                    snprintf(valBuf, sizeof(valBuf), "N/A");
-                ImGui::TextColored(c, "M%d lat=%.2f lon=%.2f val=%s", m.id, m.lat, m.lon, valBuf);
-                ImGui::SameLine();
-                if (ImGui::SmallButton("Remove"))
-                {
-                    RemoveMarkerAt(i);
-                    ImGui::PopID();
-                    break;
-                }
-                ImGui::PopID();
+                    g_SaveSelectionStatus = "Failed to save selection. Check file permissions.";
             }
-            ImVec2 plotSize(ImGui::GetContentRegionAvail().x, 120.0f);
-            DrawMarkersPlot(plotSize);
-            if (g_PlotClickRequest >= 0 && g_PlotClickRequest < (int)g_GribMessages.size())
-            {
-                ClearAllSelections();
-                g_GribMessages[g_PlotClickRequest].selected = true;
-                g_LastSelectionAnchor = g_PlotClickRequest;
-                RefreshSelectionState(true, g_PlotClickRequest);
-                g_ExtractionRunning = false;
-                g_ExtractionStatus = "";
-            }
-            ImGui::PushItemWidth(-150.0f);
-            ImGui::InputText("CSV##markerscsv", g_MarkersCsvPath, IM_ARRAYSIZE(g_MarkersCsvPath));
-            ImGui::PopItemWidth();
+            ImGui::EndDisabled();
             ImGui::SameLine();
-            if (ImGui::Button("Browse##markerscsv"))
+            if (ImGui::Button("Browse##gribpath", ImVec2(browseWidth, 0.0f)))
             {
-                const char *patterns[] = {"*.csv"};
-                const char *choice = tinyfd_saveFileDialog("Save markers CSV", g_MarkersCsvPath, 1, patterns, "CSV files");
+                const char *patterns[] = {"*.grib", "*.grb", "*.grib2", "*.grb2"};
+                const char *choice = tinyfd_saveFileDialog("Save GRIB selection", g_SaveGribPath, 4, patterns, "GRIB files");
                 if (choice)
-                    SetPathBuffer(g_MarkersCsvPath, IM_ARRAYSIZE(g_MarkersCsvPath), choice);
+                    SetPathBuffer(g_SaveGribPath, IM_ARRAYSIZE(g_SaveGribPath), choice);
             }
             ImGui::SameLine();
-            if (ImGui::Button("Save CSV##allmarkers"))
+            if (selectedCount > 0)
+                ImGui::Text("%d msg", selectedCount);
+            else
+                ImGui::Text("No selection");
+            if (!g_SaveSelectionStatus.empty())
             {
-                bool ok = SaveMarkersCsv();
-                g_ExtractionStatus = ok ? "CSV saved" : "Failed to save CSV";
+                ImVec4 color = g_SaveSelectionSuccess ? ImVec4(0.4f, 0.8f, 0.4f, 1.0f)
+                                                      : ImVec4(0.9f, 0.3f, 0.3f, 1.0f);
+                ImGui::TextColored(color, "%s", g_SaveSelectionStatus.c_str());
             }
         }
-        ImGui::Separator();
-        if (ImGui::Button("Keys Select"))
-            ImGui::OpenPopup("KeysSelectPopup");
-        ImGui::SameLine();
-        if (ImGui::Button("Properties"))
+        if (ImGui::CollapsingHeader("Markers", ImGuiTreeNodeFlags_DefaultOpen))
         {
-            if (g_SelectedMessageIndex >= 0 && g_SelectedMessageIndex < (int)g_GribMessages.size())
+            float twoBtnW = (ImGui::GetContentRegionAvail().x - style.ItemSpacing.x) * 0.5f;
+            if (ImGui::Button("Add marker", ImVec2(twoBtnW, 0.0f)))
             {
-                g_ShowInspector = true;
-                g_InspectorIndex = g_SelectedMessageIndex;
+                g_AddMarkerMode = true;
             }
-        }
-
-        ImGui::Separator();
-        // Keys Select Popup
-        if (ImGui::BeginPopupModal("KeysSelectPopup", NULL, ImGuiWindowFlags_AlwaysAutoResize))
-        {
-            ImGui::Text("Select keys to display:");
-            ImGui::Text("index (always shown)");
-            if (g_UiState.availableKeys.empty() && !g_GribMessages.empty())
+            ImGui::SameLine();
+            if (ImGui::Button("Run extraction", ImVec2(twoBtnW, 0.0f)))
             {
-                for (auto &pair : g_GribMessages[0].keyValueMap)
-                {
-                    std::string key = pair.first;
-                    if (key == "values" || key == "bitmap" || key == "pv" || key == "mask")
-                        continue;
-                    if (key == "index")
-                        continue;
-                    g_UiState.availableKeys.push_back(key);
-                }
-                std::sort(g_UiState.availableKeys.begin(), g_UiState.availableKeys.end());
+                StartMarkerExtraction();
             }
-            for (auto &key : g_UiState.availableKeys)
+            if (!g_ExtractionStatus.empty())
+                ImGui::Text("%s", g_ExtractionStatus.c_str());
+            if (g_AddMarkerMode)
+                ImGui::TextColored(ImVec4(0.9f, 0.8f, 0.2f, 1.0f), "Click map to place marker");
+            if (g_Markers.empty())
+                ImGui::Text("No markers yet");
+            else
             {
-                bool isChecked = (std::find(g_UiState.displayedKeys.begin(), g_UiState.displayedKeys.end(), key) != g_UiState.displayedKeys.end());
-                bool temp = isChecked;
-                if (ImGui::Checkbox(key.c_str(), &temp))
+                GribMessage *selectedGM = nullptr;
+                std::vector<double> selectedData;
+                bool selectedHasData = false;
+                if (g_SelectedMessageIndex >= 0 && g_SelectedMessageIndex < (int)g_GribMessages.size())
                 {
-                    if (temp && !isChecked)
-                        g_UiState.displayedKeys.push_back(key);
-                    else if (!temp && isChecked)
-                    {
-                        auto it = std::find(g_UiState.displayedKeys.begin(), g_UiState.displayedKeys.end(), key);
-                        if (it != g_UiState.displayedKeys.end())
-                            g_UiState.displayedKeys.erase(it);
-                    }
+                    selectedGM = &g_GribMessages[g_SelectedMessageIndex];
+                    selectedHasData = LoadMessageData(*selectedGM, selectedData);
                 }
-            }
-            if (ImGui::Button("Close##keysselect"))
-                ImGui::CloseCurrentPopup();
-            ImGui::EndPopup();
-        }
-
-        ImGui::Separator();
-        // Table of GRIB messages
-        if (g_UiState.displayedKeys.empty())
-        {
-            ImGui::Text("No columns. Use 'Keys Select' to select columns.");
-        }
-        else
-        {
-            if (ImGui::BeginTable("GribTable", (int)g_UiState.displayedKeys.size(),
-                                  ImGuiTableFlags_Resizable |
-                                      ImGuiTableFlags_Reorderable |
-                                      ImGuiTableFlags_Sortable |
-                                      ImGuiTableFlags_ScrollY |
-                                      ImGuiTableFlags_Borders |
-                                      ImGuiTableFlags_RowBg |
-                                      ImGuiTableFlags_SizingStretchProp))
-            {
-                for (int col = 0; col < (int)g_UiState.displayedKeys.size(); col++)
+                for (size_t i = 0; i < g_Markers.size(); i++)
                 {
-                    ImGui::TableSetupColumn(g_UiState.displayedKeys[col].c_str(),
-                                            ImGuiTableColumnFlags_WidthStretch);
-                }
-                ImGui::TableHeadersRow();
-                if (ImGuiTableSortSpecs *sortSpecs = ImGui::TableGetSortSpecs())
-                {
-            if (sortSpecs->SpecsDirty && sortSpecs->SpecsCount > 0)
-            {
-                const ImGuiTableColumnSortSpecs *spec = &sortSpecs->Specs[0];
-                g_UiState.sortKey = g_UiState.displayedKeys[spec->ColumnIndex];
-                g_UiState.sortAscending = (spec->SortDirection == ImGuiSortDirection_Ascending);
-                std::stable_sort(g_GribMessages.begin(), g_GribMessages.end(),
-                                 [&](const GribMessage &ma, const GribMessage &mb)
-                                 {
-                                     return compareGribMessages(ma, mb,
-                                                                g_UiState.sortKey,
-                                                                g_UiState.sortAscending);
-                                 });
-                ClearMarkerSeries();
-                g_ExtractionRunning = false;
-                g_ExtractionStatus = "Markers cleared after reordering";
-                int activeIndex = -1;
-                for (size_t j = 0; j < g_GribMessages.size(); j++)
-                {
-                    if (g_GribMessages[j].selected)
-                    {
-                                activeIndex = j;
-                                break;
-                            }
-                        }
-                        g_SelectedMessageIndex = activeIndex;
-                        g_LastSelectionAnchor = g_SelectedMessageIndex;
-                        sortSpecs->SpecsDirty = false;
-                    }
-                }
-                bool tableFocused = ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows);
-                if (tableFocused)
-                {
-                    const ImGuiIO &io = ImGui::GetIO();
-                    bool shiftDown = io.KeyShift;
-                    if (ImGui::IsKeyPressed(ImGuiKey_UpArrow))
-                    {
-                        if (!g_GribMessages.empty())
-                        {
-                            int current = (g_SelectedMessageIndex >= 0) ? g_SelectedMessageIndex : 0;
-                            int newIndex = std::max(0, current - 1);
-                            if (shiftDown)
-                            {
-                                if (g_LastSelectionAnchor < 0)
-                                    g_LastSelectionAnchor = current;
-                                SelectRangeInclusive(g_LastSelectionAnchor, newIndex);
-                            }
-                            else
-                            {
-                                ClearAllSelections();
-                                g_GribMessages[newIndex].selected = true;
-                                g_LastSelectionAnchor = newIndex;
-                            }
-                            RefreshSelectionState(true, newIndex);
-                            if (!shiftDown && g_SelectedMessageIndex >= 0)
-                                g_LastSelectionAnchor = g_SelectedMessageIndex;
-                        }
-                    }
-                    if (ImGui::IsKeyPressed(ImGuiKey_DownArrow))
-                    {
-                        if (!g_GribMessages.empty())
-                        {
-                            int lastIndex = (int)g_GribMessages.size() - 1;
-                            int current = (g_SelectedMessageIndex >= 0) ? g_SelectedMessageIndex : -1;
-                            int newIndex = (current < 0) ? 0 : std::min(current + 1, lastIndex);
-                            if (shiftDown)
-                            {
-                                if (g_LastSelectionAnchor < 0)
-                                    g_LastSelectionAnchor = (current >= 0) ? current : newIndex;
-                                SelectRangeInclusive(g_LastSelectionAnchor, newIndex);
-                            }
-                            else
-                            {
-                                ClearAllSelections();
-                                g_GribMessages[newIndex].selected = true;
-                                g_LastSelectionAnchor = newIndex;
-                            }
-                            RefreshSelectionState(true, newIndex);
-                            if (!shiftDown && g_SelectedMessageIndex >= 0)
-                                g_LastSelectionAnchor = g_SelectedMessageIndex;
-                        }
-                    }
-                    if (ImGui::IsKeyPressed(ImGuiKey_Delete) || ImGui::IsKeyPressed(ImGuiKey_Backspace))
-                    {
-                        std::vector<GribMessage> remaining;
-                        for (auto &msg : g_GribMessages)
-                        {
-                            if (msg.selected)
-                            {
-                                if (msg.message)
-                                    codes_handle_delete(msg.message);
-                            }
-                            else
-                                remaining.push_back(msg);
-                        }
-                        g_GribMessages = remaining;
-                        for (size_t i = 0; i < g_GribMessages.size(); i++)
-                        {
-                            g_GribMessages[i].index = i + 1;
-                        }
-                        if (!g_GribMessages.empty())
-                        {
-                            for (auto &msg : g_GribMessages)
-                                msg.selected = false;
-                            g_GribMessages[0].selected = true;
-                            g_SelectedMessageIndex = 0;
-                            GenerateTextureForSelectedMessage();
-                            g_LastSelectionAnchor = 0;
-                            ClearMarkerSeries();
-                            g_ExtractionRunning = false;
-                            g_ExtractionStatus = "Markers cleared after delete";
-                        }
-                        else
-                        {
-                            g_SelectedMessageIndex = -1;
-                            g_LastSelectionAnchor = -1;
-                            DestroyTexture(g_TextureID);
-                            ClearMarkerSeries();
-                            g_ExtractionRunning = false;
-                            g_ExtractionStatus = "Markers cleared after delete";
-                        }
-                    }
-                }
-                for (size_t i = 0; i < g_GribMessages.size(); i++)
-                {
-                    GribMessage &gm = g_GribMessages[i];
-                    bool isSelected = gm.selected;
-                    ImGui::TableNextRow(ImGuiTableRowFlags_None);
-                    ImGui::TableSetColumnIndex(0);
+                    auto &m = g_Markers[i];
                     ImGui::PushID((int)i);
-                    if (ImGui::Selectable("##rowSel", isSelected,
-                                          ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowItemOverlap))
+                    ImVec4 c = MarkerColorVec4((int)i);
+                    char valBuf[32];
+                    bool valOk = false;
+                    double val = 0.0;
+                    if (selectedHasData && selectedGM)
                     {
-                        ImGuiIO &rowIO = ImGui::GetIO();
-                        bool shiftDown = rowIO.KeyShift;
-                        bool toggleModifier = rowIO.KeyCtrl || rowIO.KeySuper;
-                        int clickedIndex = (int)i;
-                        if (shiftDown)
-                        {
-                            if (g_LastSelectionAnchor < 0)
-                                g_LastSelectionAnchor = (g_SelectedMessageIndex >= 0) ? g_SelectedMessageIndex : clickedIndex;
-                            SelectRangeInclusive(g_LastSelectionAnchor, clickedIndex);
-                            RefreshSelectionState(true, clickedIndex);
-                        }
-                        else if (toggleModifier)
-                        {
-                            gm.selected = !gm.selected;
-                            RefreshSelectionState(true, gm.selected ? clickedIndex : -1);
-                            if (gm.selected)
-                                g_LastSelectionAnchor = clickedIndex;
-                            else if (g_SelectedMessageIndex < 0)
-                                g_LastSelectionAnchor = -1;
-                        }
-                        else
-                        {
-                            ClearAllSelections();
-                            gm.selected = true;
-                            g_LastSelectionAnchor = clickedIndex;
-                            RefreshSelectionState(true, clickedIndex);
-                        }
+                        if (SampleValueFromData(*selectedGM, selectedData, m.lat, m.lon, val))
+                            valOk = true;
+                    }
+                    if (valOk)
+                        snprintf(valBuf, sizeof(valBuf), "%.2f", val);
+                    else
+                        snprintf(valBuf, sizeof(valBuf), "N/A");
+                    ImGui::TextColored(c, "M%d lat=%.2f lon=%.2f val=%s", m.id, m.lat, m.lon, valBuf);
+                    ImGui::SameLine();
+                    if (ImGui::SmallButton("Remove"))
+                    {
+                        RemoveMarkerAt(i);
+                        ImGui::PopID();
+                        break;
                     }
                     ImGui::PopID();
-                    ImGui::SameLine();
-                    auto it = gm.keyValueMap.find(g_UiState.displayedKeys[0]);
-                    if (it != gm.keyValueMap.end())
-                        ImGui::TextUnformatted(it->second.c_str());
-                    for (int col = 1; col < (int)g_UiState.displayedKeys.size(); col++)
+                }
+                ImVec2 plotSize(ImGui::GetContentRegionAvail().x, 120.0f);
+                DrawMarkersPlot(plotSize);
+                if (g_PlotClickRequest >= 0 && g_PlotClickRequest < (int)g_GribMessages.size())
+                {
+                    ClearAllSelections();
+                    g_GribMessages[g_PlotClickRequest].selected = true;
+                    g_LastSelectionAnchor = g_PlotClickRequest;
+                    RefreshSelectionState(true, g_PlotClickRequest);
+                    g_ExtractionRunning = false;
+                    g_ExtractionStatus = "";
+                }
+                ImGui::PushItemWidth(-150.0f);
+                ImGui::InputText("CSV##markerscsv", g_MarkersCsvPath, IM_ARRAYSIZE(g_MarkersCsvPath));
+                ImGui::PopItemWidth();
+                ImGui::SameLine();
+                if (ImGui::Button("Browse##markerscsv"))
+                {
+                    const char *patterns[] = {"*.csv"};
+                    const char *choice = tinyfd_saveFileDialog("Save markers CSV", g_MarkersCsvPath, 1, patterns, "CSV files");
+                    if (choice)
+                        SetPathBuffer(g_MarkersCsvPath, IM_ARRAYSIZE(g_MarkersCsvPath), choice);
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Save CSV##allmarkers"))
+                {
+                    bool ok = SaveMarkersCsv();
+                    g_ExtractionStatus = ok ? "CSV saved" : "Failed to save CSV";
+                }
+            }
+        }
+        if (ImGui::CollapsingHeader("Keys & Table", ImGuiTreeNodeFlags_DefaultOpen))
+        {
+            if (ImGui::Button("Keys Select"))
+                ImGui::OpenPopup("KeysSelectPopup");
+            ImGui::SameLine();
+            if (ImGui::Button("Properties"))
+            {
+                if (g_SelectedMessageIndex >= 0 && g_SelectedMessageIndex < (int)g_GribMessages.size())
+                {
+                    g_ShowInspector = true;
+                    g_InspectorIndex = g_SelectedMessageIndex;
+                }
+            }
+            // Keys Select Popup
+            if (ImGui::BeginPopupModal("KeysSelectPopup", NULL, ImGuiWindowFlags_AlwaysAutoResize))
+            {
+                ImGui::Text("Select keys to display:");
+                ImGui::Text("index (always shown)");
+                if (g_UiState.availableKeys.empty() && !g_GribMessages.empty())
+                {
+                    for (auto &pair : g_GribMessages[0].keyValueMap)
                     {
-                        ImGui::TableSetColumnIndex(col);
-                        const std::string &ky = g_UiState.displayedKeys[col];
-                        auto it2 = gm.keyValueMap.find(ky);
-                        if (it2 != gm.keyValueMap.end())
-                            ImGui::TextUnformatted(it2->second.c_str());
-                        else
-                            ImGui::TextUnformatted("");
+                        std::string key = pair.first;
+                        if (key == "values" || key == "bitmap" || key == "pv" || key == "mask")
+                            continue;
+                        if (key == "index")
+                            continue;
+                        g_UiState.availableKeys.push_back(key);
                     }
-                    if (g_ScrollPendingIndex == (int)i)
+                    std::sort(g_UiState.availableKeys.begin(), g_UiState.availableKeys.end());
+                }
+                for (auto &key : g_UiState.availableKeys)
+                {
+                    bool isChecked = (std::find(g_UiState.displayedKeys.begin(), g_UiState.displayedKeys.end(), key) != g_UiState.displayedKeys.end());
+                    bool temp = isChecked;
+                    if (ImGui::Checkbox(key.c_str(), &temp))
                     {
-                        ImGui::SetScrollHereY();
-                        g_ScrollPendingIndex = -1;
+                        if (temp && !isChecked)
+                            g_UiState.displayedKeys.push_back(key);
+                        else if (!temp && isChecked)
+                        {
+                            auto it = std::find(g_UiState.displayedKeys.begin(), g_UiState.displayedKeys.end(), key);
+                            if (it != g_UiState.displayedKeys.end())
+                                g_UiState.displayedKeys.erase(it);
+                        }
                     }
                 }
-                ImGui::EndTable();
-                if (g_ScrollPendingIndex >= 0)
-                    g_ScrollPendingIndex = -1;
+                if (ImGui::Button("Close##keysselect"))
+                    ImGui::CloseCurrentPopup();
+                ImGui::EndPopup();
+            }
+            // Table of GRIB messages
+            if (g_UiState.displayedKeys.empty())
+            {
+                ImGui::Text("No columns. Use 'Keys Select' to select columns.");
+            }
+            else
+            {
+                if (ImGui::BeginTable("GribTable", (int)g_UiState.displayedKeys.size(),
+                                      ImGuiTableFlags_Resizable |
+                                          ImGuiTableFlags_Reorderable |
+                                          ImGuiTableFlags_Sortable |
+                                          ImGuiTableFlags_ScrollY |
+                                          ImGuiTableFlags_Borders |
+                                          ImGuiTableFlags_RowBg |
+                                          ImGuiTableFlags_SizingStretchProp))
+                {
+                    for (int col = 0; col < (int)g_UiState.displayedKeys.size(); col++)
+                    {
+                        ImGui::TableSetupColumn(g_UiState.displayedKeys[col].c_str(),
+                                                ImGuiTableColumnFlags_WidthStretch);
+                    }
+                    ImGui::TableHeadersRow();
+                    if (ImGuiTableSortSpecs *sortSpecs = ImGui::TableGetSortSpecs())
+                    {
+                        if (sortSpecs->SpecsDirty && sortSpecs->SpecsCount > 0)
+                        {
+                            const ImGuiTableColumnSortSpecs *spec = &sortSpecs->Specs[0];
+                            g_UiState.sortKey = g_UiState.displayedKeys[spec->ColumnIndex];
+                            g_UiState.sortAscending = (spec->SortDirection == ImGuiSortDirection_Ascending);
+                            std::stable_sort(g_GribMessages.begin(), g_GribMessages.end(),
+                                             [&](const GribMessage &ma, const GribMessage &mb)
+                                             {
+                                                 return compareGribMessages(ma, mb,
+                                                                            g_UiState.sortKey,
+                                                                            g_UiState.sortAscending);
+                                             });
+                            ClearMarkerSeries();
+                            g_ExtractionRunning = false;
+                            g_ExtractionStatus = "Markers cleared after reordering";
+                            int activeIndex = -1;
+                            for (size_t j = 0; j < g_GribMessages.size(); j++)
+                            {
+                                if (g_GribMessages[j].selected)
+                                {
+                                    activeIndex = (int)j;
+                                    break;
+                                }
+                            }
+                            g_SelectedMessageIndex = activeIndex;
+                            g_LastSelectionAnchor = g_SelectedMessageIndex;
+                            sortSpecs->SpecsDirty = false;
+                        }
+                    }
+                    bool tableFocused = ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows);
+                    if (tableFocused)
+                    {
+                        const ImGuiIO &io = ImGui::GetIO();
+                        bool shiftDown = io.KeyShift;
+                        if (ImGui::IsKeyPressed(ImGuiKey_UpArrow))
+                        {
+                            if (!g_GribMessages.empty())
+                            {
+                                int current = (g_SelectedMessageIndex >= 0) ? g_SelectedMessageIndex : 0;
+                                int newIndex = std::max(0, current - 1);
+                                if (shiftDown)
+                                {
+                                    if (g_LastSelectionAnchor < 0)
+                                        g_LastSelectionAnchor = current;
+                                    SelectRangeInclusive(g_LastSelectionAnchor, newIndex);
+                                }
+                                else
+                                {
+                                    ClearAllSelections();
+                                    g_GribMessages[newIndex].selected = true;
+                                    g_LastSelectionAnchor = newIndex;
+                                }
+                                RefreshSelectionState(true, newIndex);
+                                if (!shiftDown && g_SelectedMessageIndex >= 0)
+                                    g_LastSelectionAnchor = g_SelectedMessageIndex;
+                            }
+                        }
+                        if (ImGui::IsKeyPressed(ImGuiKey_DownArrow))
+                        {
+                            if (!g_GribMessages.empty())
+                            {
+                                int lastIndex = (int)g_GribMessages.size() - 1;
+                                int current = (g_SelectedMessageIndex >= 0) ? g_SelectedMessageIndex : -1;
+                                int newIndex = (current < 0) ? 0 : std::min(current + 1, lastIndex);
+                                if (shiftDown)
+                                {
+                                    if (g_LastSelectionAnchor < 0)
+                                        g_LastSelectionAnchor = (current >= 0) ? current : newIndex;
+                                    SelectRangeInclusive(g_LastSelectionAnchor, newIndex);
+                                }
+                                else
+                                {
+                                    ClearAllSelections();
+                                    g_GribMessages[newIndex].selected = true;
+                                    g_LastSelectionAnchor = newIndex;
+                                }
+                                RefreshSelectionState(true, newIndex);
+                                if (!shiftDown && g_SelectedMessageIndex >= 0)
+                                    g_LastSelectionAnchor = g_SelectedMessageIndex;
+                            }
+                        }
+                        if (ImGui::IsKeyPressed(ImGuiKey_Delete) || ImGui::IsKeyPressed(ImGuiKey_Backspace))
+                        {
+                            std::vector<GribMessage> remaining;
+                            for (auto &msg : g_GribMessages)
+                            {
+                                if (msg.selected)
+                                {
+                                    if (msg.message)
+                                        codes_handle_delete(msg.message);
+                                }
+                                else
+                                    remaining.push_back(msg);
+                            }
+                            g_GribMessages = remaining;
+                            for (size_t i = 0; i < g_GribMessages.size(); i++)
+                            {
+                                g_GribMessages[i].index = i + 1;
+                            }
+                            if (!g_GribMessages.empty())
+                            {
+                                for (auto &msg : g_GribMessages)
+                                    msg.selected = false;
+                                g_GribMessages[0].selected = true;
+                                g_SelectedMessageIndex = 0;
+                                GenerateTextureForSelectedMessage();
+                                g_LastSelectionAnchor = 0;
+                                ClearMarkerSeries();
+                                g_ExtractionRunning = false;
+                                g_ExtractionStatus = "Markers cleared after delete";
+                            }
+                            else
+                            {
+                                g_SelectedMessageIndex = -1;
+                                g_LastSelectionAnchor = -1;
+                                DestroyTexture(g_TextureID);
+                                ClearMarkerSeries();
+                                g_ExtractionRunning = false;
+                                g_ExtractionStatus = "Markers cleared after delete";
+                            }
+                        }
+                    }
+                    for (size_t i = 0; i < g_GribMessages.size(); i++)
+                    {
+                        GribMessage &gm = g_GribMessages[i];
+                        bool isSelected = gm.selected;
+                        ImGui::TableNextRow(ImGuiTableRowFlags_None);
+                        ImGui::TableSetColumnIndex(0);
+                        ImGui::PushID((int)i);
+                        if (ImGui::Selectable("##rowSel", isSelected,
+                                              ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowItemOverlap))
+                        {
+                            ImGuiIO &rowIO = ImGui::GetIO();
+                            bool shiftDown = rowIO.KeyShift;
+                            bool toggleModifier = rowIO.KeyCtrl || rowIO.KeySuper;
+                            int clickedIndex = (int)i;
+                            if (shiftDown)
+                            {
+                                if (g_LastSelectionAnchor < 0)
+                                    g_LastSelectionAnchor = (g_SelectedMessageIndex >= 0) ? g_SelectedMessageIndex : clickedIndex;
+                                SelectRangeInclusive(g_LastSelectionAnchor, clickedIndex);
+                                RefreshSelectionState(true, clickedIndex);
+                            }
+                            else if (toggleModifier)
+                            {
+                                gm.selected = !gm.selected;
+                                RefreshSelectionState(true, gm.selected ? clickedIndex : -1);
+                                if (gm.selected)
+                                    g_LastSelectionAnchor = clickedIndex;
+                                else if (g_SelectedMessageIndex < 0)
+                                    g_LastSelectionAnchor = -1;
+                            }
+                            else
+                            {
+                                ClearAllSelections();
+                                gm.selected = true;
+                                g_LastSelectionAnchor = clickedIndex;
+                                RefreshSelectionState(true, clickedIndex);
+                            }
+                        }
+                        ImGui::PopID();
+                        ImGui::SameLine();
+                        auto it = gm.keyValueMap.find(g_UiState.displayedKeys[0]);
+                        if (it != gm.keyValueMap.end())
+                            ImGui::TextUnformatted(it->second.c_str());
+                        for (int col = 1; col < (int)g_UiState.displayedKeys.size(); col++)
+                        {
+                            ImGui::TableSetColumnIndex(col);
+                            const std::string &ky = g_UiState.displayedKeys[col];
+                            auto it2 = gm.keyValueMap.find(ky);
+                            if (it2 != gm.keyValueMap.end())
+                                ImGui::TextUnformatted(it2->second.c_str());
+                            else
+                                ImGui::TextUnformatted("");
+                        }
+                        if (g_ScrollPendingIndex == (int)i)
+                        {
+                            ImGui::SetScrollHereY();
+                            g_ScrollPendingIndex = -1;
+                        }
+                    }
+                    ImGui::EndTable();
+                    if (g_ScrollPendingIndex >= 0)
+                        g_ScrollPendingIndex = -1;
+                }
             }
         }
         ImGui::End(); // End left panel
         // Right panel: Canvas for displaying the field
-        ImGui::SetNextWindowPos(ImVec2(350.0f, menuBarHeight), ImGuiCond_Always);
-        ImGui::SetNextWindowSize(ImVec2((float)g_WindowWidth - 350.0f, (float)g_WindowHeight - menuBarHeight), ImGuiCond_Always);
+        ImGui::SetNextWindowPos(ImVec2(360.0f, menuBarHeight), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2((float)g_WindowWidth - 360.0f, (float)g_WindowHeight - menuBarHeight), ImGuiCond_Always);
         ImGui::Begin("FieldCanvas", NULL,
                      ImGuiWindowFlags_NoMove |
                          ImGuiWindowFlags_NoResize |
