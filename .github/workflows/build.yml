@@ -71,6 +71,7 @@ jobs:
             echo 'NOTARY_PROFILE=gribview' >> "$GITHUB_ENV"
           fi
       - name: Package app and wheel
+        timeout-minutes: 15
         env:
           CODESIGN_IDENTITY: ${{ secrets.MACOS_CODESIGN_IDENTITY }}
         run: |
@@ -121,7 +122,7 @@ jobs:
           done
           test -s dist/windows/bin/gribview.exe
           dist/windows/bin/gribview.exe --check docs/sample.grib
-          VERSION="$(tr -d '\n' < build/version.txt)"
+          VERSION="$(tr -d '\r\n' < build/version.txt)"
           7z a "dist/gribview-$VERSION-Windows-AMD64.zip" ./dist/windows/*
       - uses: actions/upload-artifact@v4
         with:
