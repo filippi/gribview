@@ -5,7 +5,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST_DIR="${DIST_DIR:-$ROOT/dist}"
 
 cd "$ROOT"
-VERSION="${VERSION:-$(python - <<'PY'
+VERSION="${VERSION:-$(python3 - <<'PY'
 import pathlib, re
 
 text = pathlib.Path("CMakeLists.txt").read_text()
@@ -16,7 +16,14 @@ ARCHIVE_NAME="gribview-${VERSION}.tar.gz"
 ARCHIVE_PATH="$DIST_DIR/$ARCHIVE_NAME"
 
 mkdir -p "$DIST_DIR"
-rm -f "$ARCHIVE_PATH"
+if [[ -e "$ARCHIVE_PATH" ]]; then
+  echo "Refusing to replace $ARCHIVE_PATH" >&2
+  exit 1
+fi
+if [[ -n "${GITHUB_REF_NAME:-}" && "$GITHUB_REF_NAME" != "v$VERSION" ]]; then
+  echo "Release tag does not match CMake version $VERSION" >&2
+  exit 1
+fi
 
 echo "Packing source archive: $ARCHIVE_NAME"
 git archive --format=tar.gz --prefix="${ARCHIVE_NAME%.tar.gz}/" HEAD -o "$ARCHIVE_PATH"

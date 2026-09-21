@@ -1,4 +1,7 @@
 build/
+.venv/
+__pycache__/
+*.pyc
 dist/
 dist/*
 !dist/gribview-*.tar.gz

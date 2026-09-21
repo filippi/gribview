@@ -222,17 +222,17 @@
             </div>
             <div class="button-row">
                 <!-- macOS -->
-                <a class="btn dmg" href="https://github.com/filippi/gribview/releases/download/v1.3/Gribview-1.3.dmg">
-                    Download macOS DMG
+                <a id="download-mac" class="btn dmg" href="https://github.com/filippi/gribview/releases/latest">
+                    Download macOS (Apple Silicon)
                 </a>
 
                 <!-- Linux -->
-                <a class="btn" href="https://github.com/filippi/gribview/releases/download/v1.3/gribview-1.3-Linux-x86_64.deb">
-                    Download Linux (.deb)
+                <a id="download-linux" class="btn" href="https://github.com/filippi/gribview/releases/latest">
+                    Download Linux
                 </a>
 
                 <!-- Windows -->
-                <a class="btn" href="https://github.com/filippi/gribview/releases/download/v1.3/gribview-1.3-Windows-AMD64.zip">
+                <a id="download-windows" class="btn" href="https://github.com/filippi/gribview/releases/latest">
                     Download Windows (.zip)
                 </a>
             </div>
@@ -274,7 +274,7 @@
             <li><strong>macOS (brew):</strong> <code>brew tap filippi/gribview</code> then <code>brew install gribview</code>.</li>
             <li><strong>macOS (DMG):</strong> download the DMG above, drag <code>Gribview.app</code> to <code>Applications</code>. It is unsigned; you may need to allow it under <em>System Settings → Privacy &amp; Security → Open Anyway</em>.</li>
             <li><strong>Windows:</strong> unzip the package above and run <code>gribview.exe</code>.</li>
-            <li><strong>Linux (Debian/Ubuntu):</strong> download the <code>.deb</code> above and run <code>sudo apt install ./gribview-1.2-Linux-x86_64.deb</code>. This pulls <code>libeccodes</code>, <code>libsdl2</code>, <code>libglew</code> automatically. Other distros can use the tarball from the release and install those libs via their package manager.</li>
+            <li><strong>Linux:</strong> release 1.4 adds a self-contained AppImage and portable bundle for x86_64 desktops, plus a Debian package for Ubuntu 22.04+/Debian 12+. The older 1.3 Linux packages have known dependency problems.</li>
         </ul>
 
         <div class="about">
@@ -307,5 +307,27 @@
     </footer>
 </div>
 
+<script>
+fetch('https://api.github.com/repos/filippi/gribview/releases/latest')
+    .then(response => {
+        if (!response.ok) throw new Error('Release unavailable');
+        return response.json();
+    })
+    .then(release => {
+        const assets = release.assets || [];
+        const choices = [
+            ['download-mac', asset => asset.name.endsWith('.dmg')],
+            ['download-linux', asset => asset.name.endsWith('-x86_64.AppImage')],
+            ['download-windows', asset => /Windows.*\.zip$/.test(asset.name)]
+        ];
+        for (const [id, matches] of choices) {
+            const asset = assets.find(matches);
+            if (asset && asset.browser_download_url.startsWith('https://github.com/filippi/gribview/releases/download/')) {
+                document.getElementById(id).href = asset.browser_download_url;
+            }
+        }
+    })
+    .catch(() => {});
+</script>
 </body>
 </html>

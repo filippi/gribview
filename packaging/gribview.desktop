@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Gribview
+Comment=View weather data in GRIB files
+Exec=gribview %F
+Icon=gribview
+Terminal=false
+Categories=Science;DataVisualization;
+MimeType=application/x-grib;

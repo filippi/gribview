@@ -1,0 +1,24 @@
+name: Publish wheels
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published release tag with tested wheels
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    environment: pypi
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Download release wheels
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern '*.whl' --dir dist
+      - uses: pypa/gh-action-pypi-publish@release/v1

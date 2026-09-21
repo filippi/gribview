@@ -1,227 +1,158 @@
 name: Build
-
 on:
-  workflow_dispatch:
   push:
-    branches:
-      - main
-      - master
-    tags:
-      - 'v*'
+    branches: [main, master]
+    tags: ['v*']
   pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
-  build:
-    name: ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    defaults:
-      run:
-        shell: bash -l {0}
-
+  linux:
+    runs-on: ubuntu-24.04
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install system dependencies
-        if: runner.os == 'Linux'
+      - uses: actions/checkout@v4
+      - name: Build in Ubuntu 22.04
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            patchelf \
-            libeccodes0 \
-            libsdl2-2.0-0 \
-            libglew2.2 \
-            libgl1-mesa-dev \
-            libglu1-mesa-dev
-
-      - name: Set up Micromamba
-        uses: mamba-org/setup-micromamba@v1
-        with:
-          environment-name: gribview
-          condarc: |
-            channels:
-              - conda-forge
-          create-args: >-
-            cmake
-            ninja
-            eccodes
-            glew
-            sdl2
-          init-shell: bash
-          cache-environment: true
-
-      - name: Configure
-        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
-
-      - name: Build
-        run: cmake --build build --config Release
-
-      - name: Test
-        run: ctest --test-dir build --output-on-failure
-
-      - name: Prepare artifact folder
+          docker build -f packaging/Dockerfile.linux -t gribview-builder packaging
+          mkdir -p dist/linux
+          docker run --rm --init -v "$PWD:/src:ro" -v "$PWD/dist/linux:/out" gribview-builder bash tools/build_linux_release.sh
+      - name: Test installed artifacts on clean systems
         run: |
-          rm -rf artifacts/${{ runner.os }}
-          mkdir -p artifacts/${{ runner.os }}
-
-      - name: Install
-        run: cmake --install build --config Release --prefix "${{ github.workspace }}/artifacts/${{ runner.os }}"
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: gribview-${{ runner.os }}
-          path: artifacts/${{ runner.os }}
-
-  package:
-    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
-    name: Release packages (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    defaults:
-      run:
-        shell: bash -l {0}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        
-      - name: Install system dependencies
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            patchelf \
-            libeccodes0 \
-            libsdl2-2.0-0 \
-            libglew2.2 \
-            libgl1-mesa-dev \
-            libglu1-mesa-dev
-
-      - name: Set up Micromamba
-        uses: mamba-org/setup-micromamba@v1
-        with:
-          environment-name: gribview
-          condarc: |
-            channels:
-              - conda-forge
-          create-args: >-
-            cmake
-            ninja
-            eccodes
-            glew
-            sdl2
-          init-shell: bash
-          cache-environment: true
-
-      - name: Configure
-        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
-
-      - name: Build
-        run: cmake --build build --config Release
-
-      - name: Test
-        run: ctest --test-dir build --output-on-failure
-
-      - name: Package Homebrew source archive
-        if: runner.os == 'Linux'
-        env:
-          REF_VERSION: ${{ github.ref_name }}
-        run: |
-          VERSION="${REF_VERSION#v}" ./tools/package_homebrew.sh
-
-      - name: Create installable archives
-        run: |
-          mkdir -p dist
-          cmake -E chdir build cpack -B "${{ github.workspace }}/dist"
-
-      - name: Bundle portable Linux tar (with deps)
-        if: runner.os == 'Linux'
-        env:
-          REF_VERSION: ${{ github.ref_name }}
-        run: |
-          set -euo pipefail
-          VERSION="${REF_VERSION#v}"
-          if [ -z "$VERSION" ] || [[ "$VERSION" == refs/* ]]; then
-            VERSION=$(grep -Po 'project\\(gribview VERSION \\K[0-9.]+' CMakeLists.txt | head -1)
-          fi
-          INSTALL_DIR="${GITHUB_WORKSPACE}/dist/linux-portable"
-          cmake --install build --config Release --prefix "$INSTALL_DIR"
-          mkdir -p "$INSTALL_DIR/lib"
-          ldd "$INSTALL_DIR/bin/gribview" | awk '{print $(NF-1)}' | grep -E '^/' | while read -r lib; do
-            case "$lib" in
-              /lib/*|/usr/lib/*) continue ;;
-            esac
-            cp -n "$lib" "$INSTALL_DIR/lib/" 2>/dev/null || true
+          for image in ubuntu:22.04 ubuntu:24.04 debian:12; do
+            docker run --rm --init -v "$PWD:/src:ro" -v "$PWD/dist/linux:/out:ro" "$image" bash /src/tools/test_linux_clean.sh
           done
-          patchelf --set-rpath '$ORIGIN/../lib' "$INSTALL_DIR/bin/gribview"
-          tar -C "${GITHUB_WORKSPACE}/dist" -czf "${GITHUB_WORKSPACE}/dist/gribview-${VERSION}-Linux-portable.tar.gz" "$(basename "$INSTALL_DIR")"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packages-Linux
+          path: |
+            dist/linux/*.deb
+            dist/linux/*.tar.gz
+            dist/linux/*.AppImage
+            dist/linux/*.whl
+            dist/linux/*.png
+          if-no-files-found: error
 
-      - name: Bundle Windows zip with DLLs
-        if: runner.os == 'Windows'
-        env:
-          REF_VERSION: ${{ github.ref_name }}
+  macos:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dependencies
+        run: brew install cmake ninja eccodes sdl2 glew libpng
+      - name: Build and test
         run: |
-          set -euo pipefail
-          VERSION="${REF_VERSION#v}"
-          if [ -z "$VERSION" ] || [[ "$VERSION" == refs/* ]]; then
-            VERSION=$(grep -Po 'project\\(gribview VERSION \\K[0-9.]+' CMakeLists.txt | head -1)
+          test "$(uname -m)" = arm64
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 -DCMAKE_PREFIX_PATH="$(brew --prefix)"
+          cmake --build build
+          ctest --test-dir build --output-on-failure --no-tests=error
+          python3 -m venv .venv
+          .venv/bin/pip install pillow
+          .venv/bin/python tools/test_artifact.py build/bin/gribview docs/sample.grib --screenshot build/macos.png
+      - name: Import optional distribution identity
+        env:
+          CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.MACOS_KEYCHAIN_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          if [ -n "$CERTIFICATE" ]; then
+            printf '%s' "$CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/signing.p12"
+            security create-keychain -p "$KEYCHAIN_PASSWORD" "$RUNNER_TEMP/signing.keychain-db"
+            security set-keychain-settings -lut 21600 "$RUNNER_TEMP/signing.keychain-db"
+            security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$RUNNER_TEMP/signing.keychain-db"
+            security import "$RUNNER_TEMP/signing.p12" -P "$CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$RUNNER_TEMP/signing.keychain-db"
+            security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$RUNNER_TEMP/signing.keychain-db"
+            security list-keychains -d user -s "$RUNNER_TEMP/signing.keychain-db" login.keychain-db
+            xcrun notarytool store-credentials gribview --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD"
+            echo 'NOTARY_PROFILE=gribview' >> "$GITHUB_ENV"
           fi
-          PREFIX="$(cygpath -u "${GITHUB_WORKSPACE}")/dist/windows"
-          cmake --install build --config Release --prefix "$PREFIX"
+      - name: Package app and wheel
+        env:
+          CODESIGN_IDENTITY: ${{ secrets.MACOS_CODESIGN_IDENTITY }}
+        run: |
+          export CODESIGN_IDENTITY="${CODESIGN_IDENTITY:--}"
+          python3 tools/package_macos.py --build build --dist dist/macos
+          python3 tools/bundle_runtime.py --build build --output dist/wheel-runtime
+          .venv/bin/pip wheel . --no-deps --config-settings "runtime=$PWD/dist/wheel-runtime" -w dist/macos
+          python3 -m venv "$RUNNER_TEMP/wheel-test"
+          "$RUNNER_TEMP/wheel-test/bin/pip" install --no-index dist/macos/*.whl
+          "$RUNNER_TEMP/wheel-test/bin/gribview" --check docs/sample.grib
+          .venv/bin/python tools/test_artifact.py dist/macos/Gribview.app/Contents/MacOS/gribview docs/sample.grib --screenshot dist/macos/app.png
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packages-macOS
+          path: |
+            dist/macos/*.dmg
+            dist/macos/*.whl
+            dist/macos/*.png
+          if-no-files-found: error
+
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash -l {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-name: gribview
+          create-args: cmake ninja eccodes glew sdl2 libpng
+      - name: Build and package
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build
+          ctest --test-dir build --output-on-failure --no-tests=error
+          cmake --install build --prefix "$PWD/dist/windows"
           ENV_ROOT="$MAMBA_ROOT_PREFIX/envs/gribview"
-          mkdir -p "$PREFIX/bin"
-          for dir in "$ENV_ROOT/Library/bin" "$ENV_ROOT/bin"; do
-            if [ -d "$dir" ]; then
-              cp -n "$dir"/*.dll "$PREFIX/bin/" 2>/dev/null || true
-            fi
-          done
-          for dir in "$ENV_ROOT/Library/share/eccodes" "$ENV_ROOT/share/eccodes"; do
-            if [ -d "$dir/definitions" ]; then
-              echo "Copying ecCodes definitions/samples from $dir"
-              mkdir -p "$PREFIX/Resources/eccodes"
-              cp -a "$dir/definitions" "$PREFIX/Resources/eccodes/" || true
-              cp -a "$dir/samples" "$PREFIX/Resources/eccodes/" || true
-              break
-            fi
-          done
-          rm -f "${GITHUB_WORKSPACE}/dist/gribview-${VERSION}-Windows-AMD64.zip"
-          7z a "${GITHUB_WORKSPACE}/dist/gribview-${VERSION}-Windows-AMD64.zip" "$PREFIX"
-
-      - name: List packages
-        run: ls -R dist
-
-      - name: Upload release packages
-        uses: actions/upload-artifact@v4
+          cp "$ENV_ROOT/Library/bin/"*.dll dist/windows/bin/
+          mkdir -p dist/windows/share/gribview/eccodes
+          cp -R "$ENV_ROOT/Library/share/eccodes/definitions" "$ENV_ROOT/Library/share/eccodes/samples" dist/windows/share/gribview/eccodes/
+          dist/windows/bin/gribview.exe --check docs/sample.grib
+          VERSION="$(tr -d '\n' < build/version.txt)"
+          7z a "dist/gribview-$VERSION-Windows-AMD64.zip" ./dist/windows/*
+      - uses: actions/upload-artifact@v4
         with:
-          name: packages-${{ runner.os }}
-          path: dist/*
+          name: packages-Windows
+          path: dist/*.zip
+          if-no-files-found: error
 
   release:
-    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
-    needs: package
-    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [linux, macos, windows]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
     steps:
-      - name: Download artifacts
-        uses: actions/download-artifact@v4
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
         with:
-          path: release_artifacts
-
-      - name: Display collected artifacts
-        run: ls -R release_artifacts
-
-      - name: Publish GitHub release
-        uses: softprops/action-gh-release@v1
+          pattern: packages-*
+          merge-multiple: true
+          path: dist
+      - name: Source, tap definitions and checksums
+        run: |
+          bash tools/package_homebrew.sh
+          VERSION="${GITHUB_REF_NAME#v}"
+          python3 tools/prepare_tap.py --version "$VERSION" --source "dist/gribview-$VERSION.tar.gz" --output dist/tap --dmg "$(find dist -maxdepth 1 -name '*.dmg' -print -quit)"
+          tar -C dist/tap -czf "dist/gribview-$VERSION-homebrew-tap.tar.gz" Formula Casks
+          cd dist
+          sha256sum *.tar.gz *.deb *.AppImage *.dmg *.whl *.zip > SHA256SUMS
+      - name: Prepare draft release
+        uses: softprops/action-gh-release@v2
         with:
+          draft: true
+          fail_on_unmatched_files: true
+          generate_release_notes: true
           files: |
-            release_artifacts/**/*.tar.gz
-            release_artifacts/**/*.zip
-            release_artifacts/**/*.deb
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            dist/*.tar.gz
+            dist/*.deb
+            dist/*.AppImage
+            dist/*.dmg
+            dist/*.whl
+            dist/*.zip
+            dist/SHA256SUMS

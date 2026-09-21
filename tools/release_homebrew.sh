@@ -33,7 +33,7 @@ fi
 ARCHIVE_NAME="gribview-${VERSION}.tar.gz"
 ARCHIVE_PATH="$ROOT/dist/$ARCHIVE_NAME"
 
-./tools/package_homebrew.sh VERSION="$VERSION"
+VERSION="$VERSION" bash ./tools/package_homebrew.sh
 
 if [[ ! -f "$ARCHIVE_PATH" ]]; then
   echo "Missing expected archive $ARCHIVE_PATH" >&2
@@ -44,7 +44,7 @@ SHA="$(shasum -a 256 "$ARCHIVE_PATH" | awk '{print $1}')"
 
 BREW_URL="https://github.com/filippi/gribview/releases/download/v${VERSION}/${ARCHIVE_NAME}"
 
-BREW_URL="$BREW_URL" SHA="$SHA" python - <<PY
+BREW_URL="$BREW_URL" SHA="$SHA" python3 - <<PY
 from pathlib import Path
 import os
 import re
@@ -58,7 +58,7 @@ text = re.sub(r'sha256 "[^"]+"', f'sha256 "{sha}"', text, count=1)
 formula.write_text(text)
 PY
 
-git tag -f "v${VERSION}"
+git tag "v${VERSION}"
 
 echo "Prepared release v${VERSION}"
 echo "  archive: $ARCHIVE_PATH"

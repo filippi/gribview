@@ -1,40 +1,64 @@
 name: Build bottle
-
 on:
+  release:
+    types: [published]
   workflow_dispatch:
-  push:
-    tags:
-      - "v*"
-
+    inputs:
+      tag:
+        description: Published release tag
+        required: true
+        type: string
+permissions:
+  contents: write
 jobs:
   bottle:
     runs-on: macos-15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
     steps:
       - uses: actions/checkout@v4
-
-      - name: Update Homebrew
-        run: brew update
-
-      - name: Set up temporary tap with formula
+      - name: Prepare release formula
         run: |
-          brew tap-new local/gribview --no-git
-          cp homebrew/gribview.rb "$(brew --repository local/gribview)/Formula/"
-
-      - name: Build from source for bottling
+          mkdir release
+          gh release download "$RELEASE_TAG" --pattern "gribview-${RELEASE_TAG#v}.tar.gz" --dir release
+          python3 tools/prepare_tap.py --version "${RELEASE_TAG#v}" --source "release/gribview-${RELEASE_TAG#v}.tar.gz" --output release/tap
+          brew tap-new filippi/gribview --no-git
+          cp release/tap/Formula/gribview.rb "$(brew --repository filippi/gribview)/Formula/gribview.rb"
+      - name: Build, test and bottle
         run: |
-          brew uninstall --force gribview || true
-          brew install --build-bottle local/gribview/gribview
-
-      - name: Create bottle
-        run: |
-          mkdir -p bottle
-          pushd bottle
-          brew bottle --json local/gribview/gribview
-          popd
-          ls -lh bottle
-
-      - name: Upload bottle artifacts
-        uses: actions/upload-artifact@v4
+          brew install --build-bottle filippi/gribview/gribview
+          brew test filippi/gribview/gribview
+          brew linkage --test filippi/gribview/gribview
+          mkdir bottle
+          cd bottle
+          brew bottle --json --root-url "https://github.com/filippi/gribview/releases/download/$RELEASE_TAG" filippi/gribview/gribview
+          brew bottle --merge --write --no-commit ./*.json
+          cp "$(brew --repository filippi/gribview)/Formula/gribview.rb" .
+          gh release upload "$RELEASE_TAG" ./*.tar.gz ./*.json
+      - uses: actions/upload-artifact@v4
         with:
-          name: gribview-bottle
+          name: homebrew-formula-and-bottle
           path: bottle/*
+      - name: Update tap when credentials are configured
+        env:
+          TAP_TOKEN: ${{ secrets.TAP_TOKEN }}
+        run: |
+          if [ -z "$TAP_TOKEN" ]; then
+            echo 'Download homebrew-formula-and-bottle and copy gribview.rb to the tap Formula directory.'
+            exit 0
+          fi
+          export GH_TOKEN="$TAP_TOKEN"
+          gh auth setup-git
+          gh repo clone filippi/homebrew-gribview release-tap
+          cp bottle/gribview.rb release-tap/Formula/gribview.rb
+          gh release download "$RELEASE_TAG" --repo filippi/gribview --pattern '*-homebrew-tap.tar.gz' --dir release
+          tar -xzf release/*-homebrew-tap.tar.gz -C release
+          mkdir -p release-tap/Casks
+          cp release/Casks/gribview-app.rb release-tap/Casks/
+          cd release-tap
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add Formula/gribview.rb Casks/gribview-app.rb
+          git diff --cached --quiet || git commit -m "gribview $RELEASE_TAG"
+          git push
