@@ -95,11 +95,21 @@ compile dependencies during user installation. Tags are `py3-none` with
 ELF's glibc version requirements and rejects unresolved/nonbundled dependencies
 outside the declared system boundary. The launcher supports Python 3.9+.
 
-Configure the PyPI project (or pending publisher) for this repository,
+The release wheels are also indexed on GitHub Pages. Generate the index from
+the exact files uploaded to the release, then commit the resulting HTML:
+
+```sh
+python3 tools/update_wheel_index.py --version 1.4.0 --artifacts dist/publish-1.4.0
+```
+
+Users can install with `pip install --index-url https://filippi.github.io/gribview/wheels gribview`
+inside a virtual environment. Links include SHA256 hashes.
+
+For optional PyPI publication, configure the project (or pending publisher) for this repository,
 `pypi.yml`, and the `pypi` environment. After publishing a tested GitHub release,
 run the Publish wheels workflow with its tag. No PyPI API token is needed.
 The project name must be available or owned by the maintainer. Until uploaded,
-use `pip install /path/to/the.whl`; a bare `pip install gribview` is not yet a
+use the project index or a downloaded wheel; a bare `pip install gribview` is not a
 verified public installation route.
 
 ## Homebrew and publishing
@@ -113,20 +123,22 @@ verified public installation route.
    bottle. With `TAP_TOKEN` configured it updates `filippi/homebrew-gribview`;
    otherwise download its artifact and copy the formula into that tap. The
    generated cask is `gribview-app`, distinct from the CLI formula `gribview`.
-5. Dispatch Publish wheels after configuring PyPI trusted publishing.
+5. Update the Pages wheel index from the released wheels. Optionally dispatch
+   Publish wheels after configuring PyPI trusted publishing.
 
 `tools/prepare_tap.py` derives formulas/casks from actual archive checksums.
-The checked-in legacy formula remains the published 1.3 source formula until
-the next release assets exist; do not point users at nonexistent 1.4 URLs.
+Update the checked-in formula and the external tap only after release assets
+exist, using their real checksums.
 Manual Build workflow runs only create artifacts, never publish a release.
 
-Expected user commands once the new release and tap are published:
+User commands:
 
 ```sh
 brew install filippi/gribview/gribview
 brew install --cask filippi/gribview/gribview-app
-pipx install gribview
+pipx install --index-url https://filippi.github.io/gribview/wheels gribview
 ```
 
-No release was published by implementing these scripts. Signing credentials,
-tap credentials and PyPI ownership are external setup requirements.
+Signing credentials, automated tap credentials and optional PyPI ownership are
+external setup requirements. Unsigned DMGs are clearly labeled; they are not
+notarized and may require the documented first-launch approval in macOS settings.

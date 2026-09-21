@@ -8,10 +8,8 @@ or save selected messages into a smaller GRIB file.
 
 ## Install
 
-Get downloads from [GitHub Releases](https://github.com/filippi/gribview/releases).
-The installation paths below describe the new **1.4 packaging**. Until 1.4 is
-published, the latest public release is still 1.3; its Linux packages have known
-runtime dependency problems. Do not confuse a source archive with an app download.
+Get **1.4.0** from [GitHub Releases](https://github.com/filippi/gribview/releases/tag/v1.4.0).
+Choose the app for your operating system, not the source archive.
 
 ### Mac: Apple Silicon, macOS 15 or newer
 
@@ -28,8 +26,7 @@ brew install filippi/gribview/gribview
 gribview your-file.grib
 ```
 
-The next release also generates a desktop-app cask. Once that release and tap
-update are published:
+To install the desktop app instead:
 
 ```sh
 brew install --cask filippi/gribview/gribview-app
@@ -68,23 +65,22 @@ also works. Alpine/musl Linux is not supported by these binary packages.
 
 ### Python environments
 
-Platform wheels include the same native desktop application. With a downloaded
-wheel matching your OS and architecture:
+Platform wheels include the same native desktop application. The project index
+selects the Apple Silicon macOS or x86_64 Linux wheel automatically:
 
 ```sh
 python3 -m venv ~/.venvs/gribview
-~/.venvs/gribview/bin/pip install /path/to/gribview-1.4.0-....whl
+~/.venvs/gribview/bin/pip install --index-url https://filippi.github.io/gribview/wheels gribview
 ~/.venvs/gribview/bin/gribview your-file.grib
 ```
 
-After the wheels are published to PyPI, `pip install gribview` in a virtual
-environment or `pipx install gribview` will select the right wheel automatically.
-PyPI publication is separate from building the wheels; no public PyPI release
-is implied by this source tree. Python 3.9+ is required.
+Alternatively, install a downloaded `.whl` with `pip install /path/to/file.whl`.
+Python 3.9+ is required. These wheels use the project index, not PyPI, and still
+need a graphical desktop to show the application.
 
 ### Windows
 
-Download the Windows ZIP from Releases, extract it, and run `gribview.exe`.
+Download the Windows ZIP from Releases, extract it, and run `bin/gribview.exe`.
 The CI workflow retains Windows packaging and bundles its runtime DLLs.
 
 ## Use

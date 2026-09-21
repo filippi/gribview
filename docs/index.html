@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>gribview – GRIB visualiser</title>
 <style>
+    * { box-sizing: border-box; }
+    code, .terminal { overflow-wrap: anywhere; }
+
     body {
         margin: 0;
         padding: 0;
@@ -214,25 +217,25 @@
 
         <h1>gribview</h1>
         <p class="subtitle">Blazing-fast GRIB browsing (OpenGL + ecCodes), reorganize/merge/append/filter messages, export CSV time series/point values, PNG, and save compact GRIB archives.</p>
-        <p class="subtitle">Pick your platform below—no compiler needed.</p>
+        <p class="subtitle"><strong>New release: gribview 1.4.0</strong><br>Download the app or install with Homebrew or pip. No compiler needed for the packaged downloads.</p>
 
         <div class="buttons">
             <div class="terminal">
                 $ brew tap filippi/gribview && brew install gribview
             </div>
             <div class="button-row">
-                <!-- macOS -->
-                <a id="download-mac" class="btn dmg" href="https://github.com/filippi/gribview/releases/latest">
+                <!-- Apple Silicon only; no Intel or universal Mac package. -->
+                <a id="download-mac" class="btn dmg" href="https://github.com/filippi/gribview/releases/download/v1.4.0/Gribview-1.4.0-macOS-arm64-unsigned.dmg">
                     Download macOS (Apple Silicon)
                 </a>
 
-                <!-- Linux -->
-                <a id="download-linux" class="btn" href="https://github.com/filippi/gribview/releases/latest">
+                <!-- Linux x86_64 AppImage; Debian and portable options below. -->
+                <a id="download-linux" class="btn" href="https://github.com/filippi/gribview/releases/download/v1.4.0/Gribview-1.4.0-x86_64.AppImage">
                     Download Linux
                 </a>
 
                 <!-- Windows -->
-                <a id="download-windows" class="btn" href="https://github.com/filippi/gribview/releases/latest">
+                <a id="download-windows" class="btn" href="https://github.com/filippi/gribview/releases/download/v1.4.0/gribview-1.4.0-Windows-AMD64.zip">
                     Download Windows (.zip)
                 </a>
             </div>
@@ -264,18 +267,17 @@
             <li>Scrub levels/parameters, tweak colour maps, export PNGs, and inspect full metadata.</li>
         </ul>
 
-        <div class="section-title">Quick install (macOS via Homebrew)</div>
-        <ul>
-            <li><strong>brew:</strong> <code>brew tap filippi/gribview</code> then <code>brew install gribview</code>.</li>
-        </ul>
-
         <div class="section-title">Install options</div>
+        <p>Version 1.4.0. Mac downloads require Apple Silicon and macOS 15 or newer; there is no Intel Mac build.</p>
         <ul>
             <li><strong>macOS (brew):</strong> <code>brew tap filippi/gribview</code> then <code>brew install gribview</code>.</li>
             <li><strong>macOS (DMG):</strong> download the DMG above, drag <code>Gribview.app</code> to <code>Applications</code>. It is unsigned; you may need to allow it under <em>System Settings → Privacy &amp; Security → Open Anyway</em>.</li>
-            <li><strong>Windows:</strong> unzip the package above and run <code>gribview.exe</code>.</li>
-            <li><strong>Linux:</strong> release 1.4 adds a self-contained AppImage and portable bundle for x86_64 desktops, plus a Debian package for Ubuntu 22.04+/Debian 12+. The older 1.3 Linux packages have known dependency problems.</li>
+            <li><strong>macOS (app via brew):</strong> <code>brew install --cask filippi/gribview/gribview-app</code>.</li>
+            <li><strong>Windows:</strong> unzip the package above and run <code>bin/gribview.exe</code>.</li>
+            <li><strong>Linux:</strong> make the AppImage executable and open it. For Ubuntu 22.04+/Debian 12+, download the <a href="https://github.com/filippi/gribview/releases/download/v1.4.0/gribview-1.4.0-Linux-x86_64.deb">Debian package</a> and open it in your software installer. The <a href="https://github.com/filippi/gribview/releases/download/v1.4.0/gribview-1.4.0-linux-x86_64.tar.gz">portable archive</a> also includes an <code>install.sh</code> for installation without administrator access. Linux packages target x86_64, glibc 2.35+, and a desktop with OpenGL 3.2.</li>
+            <li><strong>Python / pip:</strong> create a virtual environment with <code>python3 -m venv gribview-env</code>, then run <code>gribview-env/bin/pip install --index-url https://filippi.github.io/gribview/wheels gribview</code>. Start the app with <code>gribview-env/bin/gribview</code>. Python 3.9+; Apple Silicon macOS or x86_64 Linux.</li>
         </ul>
+        <p><a href="https://github.com/filippi/gribview/releases/tag/v1.4.0">All 1.4.0 downloads, checksums and release notes</a></p>
 
         <div class="about">
             <h3>About &amp; updates</h3>
@@ -285,7 +287,7 @@
 
         <div class="section-title">How to run on macOS (unsigned app)</div>
         <ol>
-            <li>Download the <code>Gribview.dmg</code> file using the button above.</li>
+            <li>Download the Apple Silicon DMG using the button above.</li>
             <li>Double‑click the DMG in Finder and drag <code>Gribview.app</code> into your <code>Applications</code> folder.</li>
             <li>Try to launch gribview once from <code>Applications</code> (or Spotlight). macOS will warn that the app is from an unidentified developer and block it.</li>
             <li>Open <code>System Settings → Privacy &amp; Security</code>. Scroll down until you see the message saying that “gribview was blocked from use”.</li>
