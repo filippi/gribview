@@ -104,6 +104,12 @@ def stage(build, output):
                 if source == original.resolve():
                     continue
                 deps.append((dep, source))
+            # sdl2-compat loads SDL3 with dlopen, so otool cannot discover it.
+            if original.name.startswith("libSDL2") and b"libSDL3.dylib" in original.read_bytes():
+                sdl3 = Path(run("brew", "--prefix", "sdl3")) / "lib/libSDL3.dylib"
+                if not sdl3.is_file():
+                    raise RuntimeError("sdl2-compat requires libSDL3.dylib in the bundle")
+                deps.append(("libSDL3.dylib", sdl3.resolve()))
         else:
             deps = [(str(p), p.resolve()) for p in linux_dependencies(original)
                     if not re.match(r"(?:ld-linux|lib(?:c|m|pthread|dl|rt|resolv|util|stdc\+\+|gcc_s)\.so)", p.name)]
@@ -133,7 +139,7 @@ def stage(build, output):
                         copyright_file = Path("/usr/share/doc") / package / "copyright"
                         if copyright_file.is_file():
                             shutil.copy2(copyright_file, notices / f"{package}.copyright")
-            if mac:
+            if mac and dep in mac_dependencies(original):
                 subprocess.run(["install_name_tool", "-change", dep, f"@executable_path/../lib/{name}", str(target)], check=True)
         if mac:
             if target.parent == libraries:
