@@ -18,7 +18,7 @@ def prepare(version, source, output, dmg=None):
   depends_on "pkgconf" => :build
   depends_on "eccodes"
   depends_on "glew"
-  depends_on "sdl2"
+  depends_on "sdl2-compat"
   depends_on "libpng"
   on_macos do
     depends_on arch: :arm64
