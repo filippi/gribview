@@ -4,6 +4,12 @@ class Gribview < Formula
   url "https://github.com/filippi/gribview/releases/download/v1.4.0/gribview-1.4.0.tar.gz"
   sha256 "2ad045f3b0a103c2c854efc8111c0e79cae9eaa81deec58a7e5018897d24e033"
   license "Apache-2.0"
+
+  bottle do
+    root_url "https://github.com/filippi/gribview/releases/download/v1.4.0"
+    sha256 cellar: :any, arm64_sequoia: "a5b9f6deac9452c725c4df6d2444efbb9bb04a31af38665cb4506668b067f0e2"
+  end
+
   depends_on "cmake" => :build
   depends_on "pkgconf" => :build
   depends_on "eccodes"
