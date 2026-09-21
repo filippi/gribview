@@ -7,7 +7,7 @@ import plistlib
 import shutil
 import subprocess
 import tempfile
-from bundle_runtime import stage, run
+from bundle_runtime import stage, run, check_runtime
 
 
 def package(build, dist):
@@ -57,7 +57,7 @@ def package(build, dist):
             subprocess.run([*command, str(binary)], check=True)
         subprocess.run([*command, str(app)], check=True)
         subprocess.run(["codesign", "--verify", "--deep", "--strict", str(app)], check=True)
-        subprocess.run([str(contents / "MacOS/gribview"), "--check", str(contents / "Resources/sample.grib")], check=True, cwd="/")
+        check_runtime(contents / "MacOS/gribview", contents / "Resources/sample.grib")
         image_root = temp / "dmg"
         image_root.mkdir()
         shutil.copytree(app, image_root / app.name)

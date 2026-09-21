@@ -11,7 +11,22 @@ import subprocess
 
 
 def run(*args):
-    return subprocess.check_output(args, text=True).strip()
+    return subprocess.check_output(args, text=True, timeout=120).strip()
+
+
+def check_runtime(executable, sample):
+    print(f"Checking relocated runtime: {executable}", flush=True)
+    process = subprocess.Popen([str(executable), "--check", str(sample)], cwd="/")
+    try:
+        code = process.wait(timeout=45)
+    except subprocess.TimeoutExpired:
+        if platform.system() == "Darwin":
+            subprocess.run(["sample", str(process.pid), "3"], timeout=20, check=False)
+        process.kill()
+        process.wait()
+        raise RuntimeError(f"Relocated runtime timed out: {executable}")
+    if code:
+        raise subprocess.CalledProcessError(code, process.args)
 
 
 def copy_tree(source, destination):
@@ -132,7 +147,7 @@ def stage(build, output):
         for binary in [*libraries.iterdir(), output / "bin/gribview"]:
             subprocess.run(["codesign", "--force", "--sign", "-", str(binary)], check=True)
     (output / "runtime-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
-    subprocess.run([str(output / "bin/gribview"), "--check", str(resources / "sample.grib")], check=True, cwd="/")
+    check_runtime(output / "bin/gribview", resources / "sample.grib")
 
 
 if __name__ == "__main__":
