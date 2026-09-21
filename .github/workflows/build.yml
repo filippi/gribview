@@ -98,20 +98,28 @@ jobs:
         shell: bash -l {0}
     steps:
       - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
       - uses: mamba-org/setup-micromamba@v2
         with:
           environment-name: gribview
-          create-args: cmake ninja eccodes glew sdl2 libpng
+          create-args: cmake ninja eccodes glew sdl2 libpng zlib
       - name: Build and package
         run: |
-          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          set -euo pipefail
+          ENV_ROOT="$(cygpath -u "$CONDA_PREFIX")"
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl -DCMAKE_PREFIX_PATH="$(cygpath -m "$ENV_ROOT/Library")"
           cmake --build build
           ctest --test-dir build --output-on-failure --no-tests=error
           cmake --install build --prefix "$PWD/dist/windows"
-          ENV_ROOT="$MAMBA_ROOT_PREFIX/envs/gribview"
           cp "$ENV_ROOT/Library/bin/"*.dll dist/windows/bin/
           mkdir -p dist/windows/share/gribview/eccodes
-          cp -R "$ENV_ROOT/Library/share/eccodes/definitions" "$ENV_ROOT/Library/share/eccodes/samples" dist/windows/share/gribview/eccodes/
+          for prefix in "$ENV_ROOT/Library/share/eccodes" "$ENV_ROOT/share/eccodes"; do
+            if [ -d "$prefix/definitions" ]; then
+              cp -R "$prefix/definitions" "$prefix/samples" dist/windows/share/gribview/eccodes/
+              break
+            fi
+          done
+          test -s dist/windows/bin/gribview.exe
           dist/windows/bin/gribview.exe --check docs/sample.grib
           VERSION="$(tr -d '\n' < build/version.txt)"
           7z a "dist/gribview-$VERSION-Windows-AMD64.zip" ./dist/windows/*
