@@ -11,7 +11,7 @@ function detectPlatform(browser) {
 }
 
 const installMethods = {
-    mac: [['dmg', 'Download app (recommended)'], ['cask', 'Homebrew app'], ['brew', 'Homebrew CLI'], ['pip', 'Python / pip']],
+    mac: [['brew', 'Homebrew CLI (default)'], ['dmg', 'Download Mac app (DMG)'], ['cask', 'Homebrew app']],
     linux: [['appimage', 'AppImage'], ['deb', 'Ubuntu / Debian package'], ['portable', 'Portable archive'], ['brew', 'Homebrew CLI'], ['pip', 'Python / pip']],
     windows: [['zip', 'Download ZIP']]
 };
@@ -26,7 +26,8 @@ function setupInstaller(doc, browser) {
     };
     function showMethod() {
         for (const panel of doc.querySelectorAll('[data-method]')) {
-            panel.hidden = panel.dataset.method !== method.value;
+            panel.hidden = panel.dataset.method !== method.value ||
+                (platform.value === 'mac' && method.value === 'brew');
         }
         doc.getElementById('mac-approval').hidden = platform.value !== 'mac' || method.value === 'brew';
         doc.getElementById('requirements').textContent = method.value === 'deb'
@@ -45,6 +46,7 @@ function setupInstaller(doc, browser) {
         method.value = choices[0]?.[0] || '';
         doc.getElementById('method-label').hidden = choices.length < 2;
         doc.getElementById('platform-prompt').hidden = choices.length > 0;
+        doc.getElementById('mac-quick-install').hidden = platform.value !== 'mac';
         showMethod();
     }
     platform.addEventListener('change', showPlatform);

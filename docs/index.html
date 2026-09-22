@@ -204,6 +204,9 @@
 
     .installer { margin: 28px 0; padding: 24px 0; border-block: 1px solid #d2d7df; text-align: left; }
     .installer h2 { font-size: 22px; margin: 0 0 16px; }
+    .quick-install h3 { font-size: 16px; margin: 18px 0 8px; }
+    .quick-install .or { margin: 16px 0; color: #666; }
+    .install-selectors { margin-top: 24px; }
     .install-selectors { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
     .install-selectors label { display: grid; gap: 6px; font-size: 14px; font-weight: 600; min-width: 0; }
     select { width: 100%; min-height: 44px; padding: 8px; font: inherit; color: #222; background: #fff; border: 1px solid #929baa; border-radius: 6px; }
@@ -235,6 +238,23 @@
 
         <section class="installer" aria-labelledby="install-heading">
             <h2 id="install-heading">Get gribview</h2>
+            <div class="quick-install" id="mac-quick-install" hidden>
+                <h3>With Homebrew</h3>
+                <pre class="terminal"><code>brew install filippi/gribview/gribview</code></pre>
+                <p class="or">or</p>
+                <h3>With pip</h3>
+                <pre class="terminal"><code>python3 -m pip install --extra-index-url https://filippi.github.io/gribview/wheels gribview</code></pre>
+                <p>Then run <code>gribview</code> to open the app. Python installation requires Python 3.9+.</p>
+                <details><summary>Python says “externally managed environment”?</summary>
+                    <pre class="terminal"><code>python3 -m venv gribview-env
+gribview-env/bin/python -m pip install --extra-index-url https://filippi.github.io/gribview/wheels gribview
+gribview-env/bin/gribview</code></pre>
+                </details>
+            </div>
+            <div class="install-panel" data-method="zip" hidden>
+                <a class="btn" href="https://github.com/filippi/gribview/releases/download/v1.4.0/gribview-1.4.0-Windows-AMD64.zip">Download for Windows (.zip)</a>
+                <p>Extract the ZIP, open the <strong>bin</strong> folder, and double-click <strong>gribview.exe</strong>. Keep the other extracted files alongside it.</p>
+            </div>
             <div class="install-selectors" id="install-selectors" hidden>
                 <label for="platform">Platform
                     <select id="platform">
@@ -244,7 +264,7 @@
                         <option value="windows">Windows</option>
                     </select>
                 </label>
-                <label for="install-method" id="method-label" hidden>Install with
+                <label for="install-method" id="method-label" hidden>Other installation options
                     <select id="install-method"></select>
                 </label>
             </div>
@@ -260,8 +280,7 @@
                 <p>Open <strong>Gribview</strong> from Applications or Spotlight.</p>
             </div>
             <div class="install-panel" data-method="brew" hidden>
-                <pre class="terminal"><code>brew install filippi/gribview/gribview
-gribview</code></pre>
+                <pre class="terminal"><code>brew install filippi/gribview/gribview</code></pre>
                 <p>Installs the <code>gribview</code> command. Start the viewer from your terminal.</p>
             </div>
             <div class="install-panel" data-method="appimage" hidden>
@@ -290,14 +309,13 @@ gribview</code></pre>
                 </details>
             </div>
             <div class="install-panel" data-method="pip" hidden>
-                <pre class="terminal"><code>python3 -m venv gribview-env
-gribview-env/bin/pip install --index-url https://filippi.github.io/gribview/wheels gribview
-gribview-env/bin/gribview</code></pre>
+                <pre class="terminal"><code>python3 -m pip install --extra-index-url https://filippi.github.io/gribview/wheels gribview</code></pre>
                 <p>Requires Python 3.9+. Installs the packaged viewer from the project index, without compiling.</p>
-            </div>
-            <div class="install-panel" data-method="zip" hidden>
-                <a class="btn" href="https://github.com/filippi/gribview/releases/download/v1.4.0/gribview-1.4.0-Windows-AMD64.zip">Download for Windows</a>
-                <p>Extract the ZIP, open the <strong>bin</strong> folder, and double-click <strong>gribview.exe</strong>. Keep the other extracted files alongside it.</p>
+                <details><summary>Python says “externally managed environment”?</summary>
+                    <pre class="terminal"><code>python3 -m venv gribview-env
+gribview-env/bin/python -m pip install --extra-index-url https://filippi.github.io/gribview/wheels gribview
+gribview-env/bin/gribview</code></pre>
+                </details>
             </div>
             <details id="mac-approval" hidden>
                 <summary>Mac first launch: unsigned app</summary>

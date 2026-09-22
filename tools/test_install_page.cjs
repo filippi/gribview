@@ -43,17 +43,20 @@ test('manual platform and method selections show only the relevant instructions'
     setupInstaller(doc, { platform: 'MacIntel' });
     const platform = doc.getElementById('platform');
     const method = doc.getElementById('install-method');
-    assert.equal(method.value, 'dmg');
+    assert.equal(method.value, 'brew');
+    assert.equal(doc.getElementById('mac-quick-install').hidden, false);
     assert.equal(doc.getElementById('install-selectors').hidden, false);
     for (const [os, choices] of Object.entries(installMethods)) {
         platform.value = os;
         platform.listeners.change();
         assert.equal(method.value, choices[0][0]);
+        assert.equal(doc.getElementById('mac-quick-install').hidden, os !== 'mac');
         assert.deepEqual(method.children.map(option => option.value), choices.map(([id]) => id));
         for (const [id] of choices) {
             method.value = id;
             method.listeners.change();
-            assert.deepEqual(panels.filter(panel => !panel.hidden).map(panel => panel.dataset.method), [id]);
+            assert.deepEqual(panels.filter(panel => !panel.hidden).map(panel => panel.dataset.method),
+                os === 'mac' && id === 'brew' ? [] : [id]);
             assert.equal(doc.getElementById('mac-approval').hidden, os !== 'mac' || id === 'brew');
             if (id === 'deb') assert.match(doc.getElementById('requirements').textContent, /Ubuntu 22.04/);
         }
@@ -63,6 +66,7 @@ test('manual platform and method selections show only the relevant instructions'
     assert.equal(panels.every(panel => panel.hidden), true);
     assert.equal(doc.getElementById('platform-prompt').hidden, false);
     assert.equal(doc.getElementById('method-label').hidden, true);
+    assert.equal(doc.getElementById('mac-quick-install').hidden, true);
 });
 
 test('mobile visitors are not offered a mismatched desktop download', () => {
